@@ -101,7 +101,9 @@
       ],
       "expo-image",
       "expo-status-bar",
-      "expo-system-ui"
+      "expo-system-ui",
+      "./plugins/withAndroidAuto",
+      "./plugins/withCarPlay"
     ],
     "experiments": {
       "typedRoutes": true

@@ -9,7 +9,7 @@ import {
   ROUTE_REASON_OLD_DEVICE_UNAVAILABLE,
 } from '../../modules/airplay-route-picker';
 import { getLastLiveMeta, loadAndPlay, setupPlayer, teardown } from '@/audio/player';
-import type { StationApi } from '@/lib/api';
+import { streamBelongsTo, type StationApi } from '@/lib/api';
 import { playbackLog } from '@/lib/playback-log';
 import { claimRemotePlay } from '@/lib/remote-play';
 import { StreamRecovery } from '@/lib/stream-recovery';
@@ -225,12 +225,17 @@ export function usePlayer(
   // RNTP level; drop local tuned-in state so the UI doesn't claim "on air"
   // over dead audio. (The event handler ignores State.None because reset()
   // also fires it mid tune-in and mid reconnect.)
+  // A car-initiated switch (src/car/carTune.ts) re-points the store and starts
+  // the new stream itself, so a loaded stream that already belongs to the
+  // incoming base is adopted rather than stopped.
   const prevBaseRef = useRef(api?.base ?? null);
   useEffect(() => {
     const nextBase = api?.base ?? null;
     if (prevBaseRef.current === nextBase) return;
     prevBaseRef.current = nextBase;
-    if (tunedInRef.current) stop();
+    const meta = getLastLiveMeta();
+    const adopted = !!(nextBase && meta && streamBelongsTo(meta.url, nextBase));
+    if (tunedInRef.current && !adopted) stop();
   }, [api, stop]);
 
   // Retune onto a new mount in place. Keyed on the transition so a steady

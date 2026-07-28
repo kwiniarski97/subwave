@@ -24,36 +24,29 @@ arch):
 `app.json` no longer declares `newArchEnabled` (it used to say `false` — equally
 a no-op). Don't rely on such flags anywhere; they do nothing on this RN version.
 
-### Why `react-native-track-player` still works under new arch
+### Why `react-native-track-player` works under new arch
 
-RNTP 4.1.2 is not natively New-Architecture-compatible — out of the box, Android
-playback crashes with `You should not use ReactNativeHost directly in the New
-Architecture` from `MusicService`. **The fix is `patches/react-native-track-player+4.1.2.patch`**,
-whose New Architecture half is two source edits (the rest of the patch is the
-progress and iOS metadata fixes described below):
+RNTP is the **lovegaoshi fork, pinned by commit** in `package.json`
+(Apache-2.0, Media3 `MediaLibraryService` inside, same v4 JS API). It carries
+its own New Architecture fix, so the old
+`patches/react-native-track-player+4.1.2.patch` is gone. The fork is what makes
+the Android Auto browse tree possible: stock RNTP v4 cannot expose a browsable
+media service. The git dependency's `prepare` script builds with **yarn**, which
+must exist on the machine or builder.
 
-- `MusicModule.kt` — routes async `@ReactMethod`s through a Unit-returning
-  `launch` helper (TurboModule interop requires void-returning async methods).
-- `MusicService.kt` — `currentReactContextCompat()` obtains the `ReactContext`
-  from `ReactHost` (new arch) instead of the `ReactNativeHost.reactInstanceManager`
-  path that throws, with an old-arch fallback.
+> **Known regression from the patch removal: the media-session song clock
+> (#857/#1880).** The old patch adapted KotlinAudio 2.1.0's session player so
+> Android published the song's duration and elapsed time, and patched iOS
+> `Metadata.swift` to clear omitted clock fields and keep artwork on
+> progress-only refreshes. The fork's Android bridge reads `elapsedTime` but
+> never applies it, so the Android notification and Bluetooth show no song
+> clock. The fork's iOS `Metadata.swift` is stock: it publishes the clock but
+> keeps stale fields through DJ speech and can drop artwork on a progress-only
+> refresh. Both need porting (a Media3 session-player adapter on Android, the
+> old `Metadata.swift` hunk on iOS). The JS side (`src/lib/track-progress.ts`,
+> `useNowPlayingInfo`) still sends the fields.
 
-> Do not delete this patch. Without it, Android RNTP crashes on the first
-> playback event. iOS (SwiftAudioEx path) is unaffected by the crash but the
-> patch is harmless there. Validated: Android `BUILD SUCCESSFUL` and iOS live
-> playback both with the patch applied.
-
-The patch also fixes live song progress (#857). RNTP 4.1.2's Android bridge
-ignores `elapsedTime`; KotlinAudio normally reports ExoPlayer's continuous
-stream position. `NowPlayingProgress` wraps only the session-facing player,
-retaining the existing remote-control interception. KotlinAudio 2.1.0's private
-`NotificationManager.player` and `mediaSessionConnector` fields are pinned by
-consumer ProGuard rules. Recheck this adapter when upgrading either dependency.
-The iOS metadata patch clears omitted song-clock fields and preserves artwork
-on progress-only refreshes, while retaining `isLiveStream` and the LIVE controls.
-These changes require a new binary, not an OTA update.
-
-For a device smoke test, play a track with a known duration and inspect
+Once the clock is restored, the device check is to play a track with a known duration and inspect
 `adb shell dumpsys media_session`: its duration should be the song's duration
 in milliseconds, and position should match the app's elapsed time, including
 the advertised listener buffer. Check that artwork remains visible during
@@ -213,26 +206,47 @@ behind the lock screen until the phone was unlocked. Device check: tune in, lock
 the phone, and wait through a track change. The notification (or a Bluetooth
 head unit) should show the new title without unlocking.
 
-### CarPlay — Now-Playing in the car (iOS only)
+### CarPlay & Android Auto — launchable in-car apps
 
-Scope is **Tier 1**: control the *already-playing* stream from the dash (metadata,
-artwork, play/pause/stop). There is **no launchable in-car app icon** — start the
-stream in the phone app first, then connect the car. RNTP feeds the iOS surface
-(`MPNowPlayingInfoCenter`), so CarPlay needs **no extra app-side wiring**.
+Both car platforms now get a real SUB/WAVE app on the car screen: a Stations
+list (featured + saved recents, the same `carStations` view on both platforms)
+→ tap → tune → the system now-playing screen, fed by the metadata RNTP already
+pushes (`useNowPlayingInfo`). The shared tune path is `src/car/carTune.ts`
+(works from the headless service — a car cold start never mounts the phone UI);
+`usePlayer`'s station-change effect *adopts* a car-initiated switch instead of
+stopping it (`streamBelongsTo` guard).
 
-- **iOS** — run on a device, or use the **CarPlay Simulator** (Simulator app →
-  **I/O → External Displays → CarPlay**). Start the stream, open the CarPlay
-  screen → SUB/WAVE shows under **Now Playing** with title/artist/album + artwork;
-  Play/Pause work; no scrubber (the `isLiveStream` track hides it).
+- **iOS (CarPlay)** — `react-native-carplay` templates; `plugins/withCarPlay.js`
+  generates the scene manifest, `CarSceneDelegate`/`PhoneSceneDelegate` Swift
+  files, and the `com.apple.developer.carplay-audio` entitlement on prebuild.
+  Test in the **CarPlay Simulator** (Simulator app → **I/O → External Displays
+  → CarPlay**) — simulator builds skip provisioning, so this works **before**
+  Apple grants the entitlement. **Device builds fail codesigning until the
+  grant lands** (apply at <https://developer.apple.com/contact/carplay/>,
+  Account Holder, category Audio; then enable CarPlay on the App ID under
+  Additional Capabilities and regenerate profiles — EAS can't sync this
+  capability). Until then `eas.json` device profiles strip the entitlement via
+  `SUBWAVE_NO_CARPLAY_ENTITLEMENT=1`; delete those lines after the grant.
+  **SDK-upgrade caveat**: the generated `PhoneSceneDelegate` re-parents the
+  AppDelegate's React root into the scene window — re-verify against Expo's
+  AppDelegate template on every SDK bump.
+- **Android (Android Auto)** — the RNTP fork's Media3 `MediaLibraryService`
+  serves the browse tree (`src/car/browseTree.ts`; taps/voice land as
+  `Event.RemotePlayId`/`RemotePlaySearch` in `service.ts`);
+  `plugins/withAndroidAuto.js` supplies `automotive_app_desc.xml` + the car
+  meta-data. Test with the **Desktop Head Unit** (Android Studio; enable Auto
+  developer mode → "Unknown sources") or a real head unit.
 
-> **Android Auto is intentionally not declared.** The earlier
-> `plugins/withAndroidAuto.js` declaration (#444) was **rejected by Google Play**
-> (20 Jun 2026) under the Auto App Quality Guidelines: media apps that use a TTS
-> engine to read out content aren't permitted on Android Auto, which is exactly
-> what SUB/WAVE's AI DJ does. The declaration was removed so the Android build
-> stays Play-compliant. iOS CarPlay is unaffected (separate `MPNowPlayingInfoCenter`
-> path, no manifest declaration). Revisit only if Google's policy changes **and**
-> a compliant `MediaBrowserService` browse tree is added.
+> ⚠ **Android Auto must stay OFF Google Play.** The earlier manifest-only
+> declaration (#444) drew a Play **enforcement** on 20 Jun 2026 — *"Category
+> not permitted — media apps that use TTS engine readout for content are not
+> permitted at this time"* — and the build was pulled (#477). The AI DJ *is*
+> TTS readout, so the now-compliant browse tree does not cure the policy
+> objection. The `production` profile therefore sets `SUBWAVE_NO_ANDROID_AUTO=1`
+> to strip the declaration from Play-bound builds; dev / `preview` (internal
+> APK) / sideloaded builds keep Android Auto working. Revisit the gate only if
+> Google's "at this time" policy changes, or to attempt an appeal armed with
+> the compliant `MediaLibraryService` implementation.
 
 ### Live Activity — Lock Screen, Dynamic Island, Apple Watch (iOS only)
 
@@ -364,13 +378,6 @@ port types without device names.
 
 ## Known issues / gotchas
 
-- **`patches/react-native-track-player+4.1.2.patch`** contains the RNTP new-arch
-  and media-session progress fixes (see "Architecture-critical facts"). It was previously bloated
-  to 229 files with accidental Gradle build artifacts; slimmed in 2026-06 and
-  re-verified with a clean `BUILD SUCCESSFUL` before the progress fix was added.
-  Keep it lean — never run `patch-package` after a Gradle build has populated
-  `node_modules/react-native-track-player/android/build/`, or it recaptures the
-  junk.
 - **JDK 21 fails the Android build.** Always `JAVA_HOME=/opt/homebrew/opt/openjdk@17`.
 - **`LegacySurfaceTexture is not attached!`** in Android logcat is **noise** from
   the Skia visualizer surface, not a crash.
@@ -388,7 +395,7 @@ port types without device names.
 |---|---|---|
 | `tsc --noEmit` | ✅ | ✅ |
 | Native build | ✅ simulator (new arch ON) | ✅ emulator + APK (new arch ON, JDK 17) |
-| RNTP New Architecture patch | ✅ live playback | ✅ `BUILD SUCCESSFUL` after slim |
+| RNTP New Architecture (fork, replaces the old patch) | ⏳ re-validate | ⏳ re-validate |
 | Install + launch | ✅ | ✅ (emulator install) |
 | JS bundle | ✅ 4075 modules | ✅ build path |
 | Onboarding → health check | ✅ all 4 probes OK | (same JS; via skill on device) |

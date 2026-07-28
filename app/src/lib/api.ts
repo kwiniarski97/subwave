@@ -7,6 +7,7 @@ import { stationAuthResult, withStreamAuth, type StationAuthResult } from './sta
 import {
   normalizeStationBase,
   resolveStationConnection,
+  splitStationAddress,
   type StationCredentials,
 } from './station-credentials';
 import type {
@@ -108,6 +109,15 @@ export interface StationApi {
 /** Strip a trailing slash; default to https:// if the user typed a bare host. */
 export function normalizeBase(raw: string): string {
   return normalizeStationBase(raw);
+}
+
+/** Does a loaded stream URL belong to this station base? Compares against the
+ *  credential-free base, because streamUrl() strips legacy userinfo (#764).
+ *  Used by usePlayer's station-change effect to adopt a car-initiated switch
+ *  (src/car/carTune.ts) instead of stopping it. */
+export function streamBelongsTo(streamUrl: string, base: string): boolean {
+  const clean = splitStationAddress(base).base;
+  return !!clean && streamUrl.startsWith(`${clean}/`);
 }
 
 /** `headers` plus the Station login as `Authorization`, when there is one:

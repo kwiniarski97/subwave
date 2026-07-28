@@ -45,8 +45,11 @@ Mark each box per platform. Note the device + OS version you tested on.
 
 ## Platform controls
 
-- [ ] **iOS** — **CarPlay**: SUB/WAVE appears, shows now-playing, Play/Pause/Stop work.
-      _(Android Auto is intentionally **not** declared — rejected by Google Play under the Auto TTS-content policy; nothing to test there.)_
+- [ ] **iOS** — **CarPlay**: SUB/WAVE app icon appears on the CarPlay home screen; Stations list shows featured + saved stations; tapping a row starts the stream and shows Now Playing (title/artist/artwork, Play/Pause, no scrubber). _(Needs the Apple carplay-audio entitlement on device builds; CarPlay Simulator works without it.)_
+- [ ] **iOS** — **CarPlay cold start**: with the app killed, plug into CarPlay and launch SUB/WAVE from the car screen — Stations list renders, a tap plays. Then open the phone app: it shows the same station tuned in (no fight over playback).
+- [ ] **iOS** — **Phone UI regression (scene split)**: normal phone launch still boots to the player (splash → UI), deep links (`subwave://`) still open, dev-client still connects. _(validates the withCarPlay scene delegates against the current Expo template)_
+- [ ] **Android** — **Android Auto** _(dev/sideload/preview builds only — the declaration is stripped from Play `production` builds, see TESTING.md)_: SUB/WAVE appears in the Auto launcher; Stations tab lists stations; tap tunes; "Hey Google, play SUB/WAVE" works; a car tap on another saved station switches the phone app too.
+- [ ] **Android** — **Auto cold start**: app killed, phone plugged into the head unit (or DHU) — launcher icon present, browse list loads, tap plays at the live edge.
 - [ ] **iOS 17+** — **Live Activity appears on tune-in**: lock the phone → the SUB/WAVE card is on the Lock Screen with station name, title, artist, cover and a running clock. Tune out → the card disappears.
 - [ ] **iOS 17+** — **Card tracks the broadcast while backgrounded**: leave it locked across a song change → title/artist/cover swap and the progress bar restarts. While the DJ talks, the artist line + artwork swap to the persona (same as the lock screen).
 - [ ] **iOS 17+** — **Cover art renders**, not the fallback disc mark. _(a disc mark on every track means the App Group entitlement is missing on one side — see TESTING.md)_

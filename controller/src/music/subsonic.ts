@@ -21,8 +21,21 @@ function buildAuth() {
   return { u: config.navidrome.user, t: token, s: salt };
 }
 
+// octo-fiesta names a song it can fetch but the library does not hold
+// `ext-<provider>-song-<id>`. Navidrome cannot resolve one, so an id-keyed call
+// for it (stream, getCoverArt) goes to octo-fiesta, which relays the station's
+// own auth to Navidrome. Every other call stays on Navidrome, so the library
+// the picker and tagger see is never widened. Songs only: an operator queues
+// a song, and octo-fiesta keys a song's cover art by the song id.
+const OCTO_SONG_ID_RE = /^ext-[a-z]+-song-/;
+
+function baseUrlFor(params: Record<string, unknown>): string {
+  const octo = config.navidrome.octoFiestaUrl;
+  return octo && OCTO_SONG_ID_RE.test(String(params.id ?? '')) ? octo : config.navidrome.url;
+}
+
 function buildUrl(endpoint, params = {}) {
-  const url = new URL(`${config.navidrome.url}/rest/${endpoint}`);
+  const url = new URL(`${baseUrlFor(params)}/rest/${endpoint}`);
   const auth = buildAuth();
   url.searchParams.set('u', auth.u);
   url.searchParams.set('t', auth.t);

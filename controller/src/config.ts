@@ -58,6 +58,10 @@ export const config = {
     // Per-request cap on Subsonic calls; without one a hung Navidrome stacks up
     // admin routes behind pending fetches (#786).
     timeoutMs: envInt('NAVIDROME_TIMEOUT_MS', 30_000),
+    // octo-fiesta — a Subsonic proxy over streaming providers. Only songs it
+    // names `ext-<provider>-song-<id>` (ones the library does not hold) are
+    // fetched from it; '' leaves every call on Navidrome. See subsonic.buildUrl.
+    octoFiestaUrl: envUrl('OCTO_FIESTA_URL', '').replace(/\/+$/, ''),
   },
   ollama: {
     // Default-when-blank. The admin Settings UI (`llm.ollamaUrl` / `llm.model`)

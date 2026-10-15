@@ -66,12 +66,13 @@ export function buildSegmentTools(
 // the agent-facing wrapper above, so a slow or throwing skill yields
 // `{ error }` rather than hanging the tick. Inputs are the skill's own
 // defaults ({} — the agent-steerable `inputs` params are a tool-loop nicety).
-export async function fetchSegmentData(cap: any, ctx: any, state: any): Promise<any> {
+// `timeoutMs`: show preparation passes a longer budget; every segment tick keeps 8 s.
+export async function fetchSegmentData(cap: any, ctx: any, state: any, { timeoutMs = 8000 }: { timeoutMs?: number } = {}): Promise<any> {
   if (typeof cap?.toolFn !== 'function') return null;
   const services = buildStationServices();
   try {
     const p = Promise.resolve(cap.toolFn(ctx, state, services, cap.config, {}));
-    return repairLegacySkillData(cap, await withTimeout(p, 8000));
+    return repairLegacySkillData(cap, await withTimeout(p, timeoutMs));
   } catch (err: any) {
     return { error: err?.message || String(err) };
   }

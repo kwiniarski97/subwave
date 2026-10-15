@@ -64,6 +64,11 @@ export function createPlaylistCursorStore({ file, knownShowIds }: {
       await load();
       return cursors.get(showId) ?? null;
     },
+    // The loaded position without awaiting, for read paths that cannot await
+    // (showPreparation.read). Null until load() has settled.
+    peek(showId: string): PlaylistCursor | null {
+      return cursors.get(showId) ?? null;
+    },
     commit(showId: string, cursor: PlaylistCursor): Promise<void> {
       return mutate(async () => {
         await load();

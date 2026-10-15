@@ -47,6 +47,7 @@ class KokoroWorker {
         ...process.env,
         KOKORO_MODEL: config.kokoro.model,
         KOKORO_VOICES: config.kokoro.voices,
+        KOKORO_PL_MODEL: config.kokoro.plModel,
         KOKORO_VOICE: config.kokoro.voice,
         KOKORO_LANG: config.kokoro.lang,
       },

@@ -108,6 +108,9 @@ export const config = {
     workerScript: envStr('KOKORO_WORKER', '/app/scripts/kokoro_worker.py'),
     model: envStr('KOKORO_MODEL', '/opt/kokoro/models/kokoro-v1.0.onnx'),
     voices: envStr('KOKORO_VOICES', '/opt/kokoro/models/voices-v1.0.bin'),
+    // Polish fine-tune, used only for Polish (`l*`) voices. Empty = those voices
+    // fall back to the stock model (understandable, heavily accented).
+    plModel: envStr('KOKORO_PL_MODEL', ''),
     voice: envStr('KOKORO_VOICE', 'bf_isabella'),   // British female, BBC-ish
     lang: envStr('KOKORO_LANG', ''),
     speed: envFloat('KOKORO_SPEED', TTS_SPEED, { min: 0.1 }),

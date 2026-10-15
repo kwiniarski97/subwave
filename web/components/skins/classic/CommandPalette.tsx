@@ -21,6 +21,8 @@ export interface CommandPaletteProps {
   onTune: () => void;
   onOpenDrawer: (kind: PlayerDrawer) => void;
   onToggleMute: () => void;
+  lyricsOn: boolean;
+  onToggleLyrics: () => void;
   onShowShortcuts: () => void;
 }
 
@@ -40,6 +42,8 @@ export default function CommandPalette({
   onTune,
   onOpenDrawer,
   onToggleMute,
+  lyricsOn,
+  onToggleLyrics,
   onShowShortcuts,
 }: CommandPaletteProps) {
   const run = (fn: () => void) => () => {
@@ -54,6 +58,7 @@ export default function CommandPalette({
     { label: 'Make a request', hint: '3', onSelect: run(() => onOpenDrawer('request')) },
     { label: 'Open Schedule', hint: '4', onSelect: run(() => onOpenDrawer('schedule')) },
     { label: muted ? 'Unmute' : 'Mute', hint: 'M', onSelect: run(onToggleMute) },
+    { label: lyricsOn ? 'Hide lyrics' : 'Show lyrics', hint: 'L', onSelect: run(onToggleLyrics) },
     { label: 'Keyboard shortcuts', hint: '?', onSelect: run(onShowShortcuts) },
   ];
 

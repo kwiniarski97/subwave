@@ -25,7 +25,8 @@ import { listCommunitySkills } from '../skills/loader.js';
 import { listCommunityPersonas } from '../personas/community.js';
 import { listCommunityShows } from '../shows/community.js';
 import { resolveEraYear } from '../music/show-filter.js';
-import { resolveSilenceTrim } from '../music/silence-trim.js';
+import { resolveSilenceTrim, shiftOnsetMs } from '../music/silence-trim.js';
+import { publicLyrics, type RawLyrics } from '../util/public-lyrics.js';
 import { playableDurationSec } from '../broadcast/drain-policy.js';
 import { lifetimeTokenCount } from '../llm/log.js';
 import { fetchWithTimeout } from '../util/fetch-timeout.js';
@@ -633,6 +634,45 @@ router.get('/similar-tracks', requireStationAuth, async (req, res) => {
     res.json({ seed: seedRow, results, ...outcome });
   } catch (err) {
     publicError(res, '/similar-tracks', err);
+  }
+});
+
+// Live lyrics for the player: one read per track per listener, so the Subsonic
+// answer (including "none") is cached like covers are. Raw lyrics are cached,
+// never the shifted ones — the trim dial can move between two reads.
+const LYRICS_CACHE_MAX = 64;
+const LYRICS_TTL_MS = 60 * 60 * 1000;
+const lyricsCache = new Map<string, { at: number; raw: RawLyrics | null }>();
+
+async function rawLyricsFor(id: string): Promise<RawLyrics | null> {
+  const hit = lyricsCache.get(id);
+  if (hit && Date.now() - hit.at < LYRICS_TTL_MS) return hit.raw;
+  const raw = await subsonic.getStructuredLyrics(id);
+  lyricsCache.delete(id);
+  lyricsCache.set(id, { at: Date.now(), raw });
+  if (lyricsCache.size > LYRICS_CACHE_MAX) {
+    const oldest = lyricsCache.keys().next().value;
+    if (oldest !== undefined) lyricsCache.delete(oldest);
+  }
+  return raw;
+}
+
+// Gated like /similar-tracks: open on a public station, the station password on
+// a private one. Line times are on the played timeline (silence-trim's own
+// shift); the player adds the listener offset. No lyrics is a 200 with an empty
+// list, not a 404 — most tracks have none and that is not an error. An outside
+// `ext-` request is asked of octo-fiesta (subsonic routes by id); it has no
+// library row, so no trim shift applies, matching the untrimmed drain.
+router.get('/lyrics/:id', requireStationAuth, async (req, res) => {
+  const id = String(req.params.id ?? '');
+  if (!/^[\w-]{1,64}$/.test(id)) return res.status(400).json({ error: 'bad id' });
+  try {
+    await library.load();
+    const raw = await rawLyricsFor(id);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.json(publicLyrics(raw, (ms) => shiftOnsetMs({ id }, ms)));
+  } catch (err) {
+    publicError(res, '/lyrics', err);
   }
 });
 

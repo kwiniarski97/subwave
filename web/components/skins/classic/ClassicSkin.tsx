@@ -103,6 +103,7 @@ export default function ClassicSkin({ portalNode }: SkinProps) {
     [nextTitle, nextArtist],
   );
   const [tickerOn, setTickerOn] = useState(true);
+  const [lyricsOn, setLyricsOn] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -125,7 +126,18 @@ export default function ClassicSkin({ portalNode }: SkinProps) {
       const v = localStorage.getItem('subwave:ticker');
       if (v != null) setTickerOn(v === '1');
     } catch {}
+    try {
+      const v = localStorage.getItem('subwave:lyrics');
+      if (v != null) setLyricsOn(v === '1');
+    } catch {}
   }, []);
+  const toggleLyrics = () => {
+    setLyricsOn(v => {
+      const next = !v;
+      try { localStorage.setItem('subwave:lyrics', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
 
   // Increments only on keyboard-driven adjusts (TransportBar pulses off it).
   // Knob drags must NOT tick it: the cells track the finger during a drag.
@@ -144,6 +156,7 @@ export default function ClassicSkin({ portalNode }: SkinProps) {
       arrowup: () => adjustVolume(0.05),
       arrowdown: () => adjustVolume(-0.05),
       m: toggleMute,
+      l: toggleLyrics,
       '1': () => setDrawer('timeline'),
       '2': () => setDrawer('booth'),
       '3': () => setDrawer('request'),
@@ -195,6 +208,7 @@ export default function ClassicSkin({ portalNode }: SkinProps) {
         llmTokens={llmTokens}
         feed={boothFeed}
         djLineOn={tickerOn}
+        lyricsOn={lyricsOn}
         boothBuddyOn={state.ui?.boothBuddy === true}
         offline={offline}
         upNext={upNext}
@@ -266,6 +280,8 @@ export default function ClassicSkin({ portalNode }: SkinProps) {
         onTune={handleTune}
         onOpenDrawer={setDrawer}
         onToggleMute={toggleMute}
+        lyricsOn={lyricsOn}
+        onToggleLyrics={toggleLyrics}
         onShowShortcuts={() => setShortcutsOpen(true)}
       />
 

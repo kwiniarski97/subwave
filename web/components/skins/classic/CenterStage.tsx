@@ -9,6 +9,7 @@ import { fmtTime } from '@/lib/format';
 import { useDynamicStyle } from '@/hooks/useDynamicStyle';
 import { useElapsed } from '@/hooks/useElapsed';
 import DjThinkingLine from './DjThinkingLine';
+import LiveLyrics from './LiveLyrics';
 import CountUp from './CountUp';
 import { Ripple } from '@/components/ui/ripple';
 import { isDjTurn } from '@/lib/sessionFeed';
@@ -78,6 +79,8 @@ export interface CenterStageProps {
   llmTokens: number | null;
   feed: SessionTurn[];
   djLineOn: boolean;
+  /** Listener preference: show synced lyrics under the title when a track has them. */
+  lyricsOn: boolean;
   /** Station-wide toggle for the Booth Sprite mascot; the DJ line falls back to
    *  the classic ♪/◇ marker when off. */
   boothBuddyOn: boolean;
@@ -90,7 +93,7 @@ export interface CenterStageProps {
   onOpenTimeline: () => void;
 }
 
-export default memo(function CenterStage({ nowPlaying, trackStartedAt, llmTokens, feed, djLineOn, boothBuddyOn, offline, upNext, onOpenBooth, onOpenTimeline }: CenterStageProps) {
+export default memo(function CenterStage({ nowPlaying, trackStartedAt, llmTokens, feed, djLineOn, lyricsOn, boothBuddyOn, offline, upNext, onOpenBooth, onOpenTimeline }: CenterStageProps) {
   const client = useStationClient();
   // The 1s elapsed tick lives here, in the component that displays it, so it
   // only re-renders this subtree — not the whole player (see useElapsed).
@@ -297,6 +300,10 @@ export default memo(function CenterStage({ nowPlaying, trackStartedAt, llmTokens
           </AnimatePresence>
         </div>
       </div>
+
+      {live && (
+        <LiveLyrics subsonicId={subsonicId} trackStartedAt={trackStartedAt} enabled={lyricsOn} />
+      )}
 
       {live && (
         <DjThinkingLine feed={feed} enabled={djLineOn} currentTrackId={subsonicId} buddyOn={boothBuddyOn} onOpenBooth={onOpenBooth} />

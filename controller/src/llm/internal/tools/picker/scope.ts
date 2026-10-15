@@ -10,13 +10,13 @@ import { applyTrackFloor } from '../../../../music/track-floor.js';
 import { freshnessBiasedOrder } from '../../../../music/airing.js';
 import { SEED_NOT_A_PICK_CLAUSE } from '../../../../util/pick-seed.js';
 import { slim } from './slim.js';
-import { intersectEpisodeSource, type ArtistEpisodeSource } from '../../../../music/episode-source.js';
+import { intersectEpisodeSource, type EpisodeSource } from '../../../../music/episode-source.js';
 
 export interface PickerScope {
   // Resolved once through the cached OpenSubsonic extension probe. False on
   // requests and unsupported servers, so no discovery pass hits a dead tool.
   sonicSimilarity: boolean;
-  episodeSource: ArtistEpisodeSource | null;
+  episodeSource: EpisodeSource | null;
   recentIds: Set<string>;
   // lowercased "title|artist" — backfilled entries lack ids
   recentKeys: Set<string>;

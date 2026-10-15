@@ -29,6 +29,9 @@ import { validatePublicBody } from '../middleware/validate.js';
 import { listenerRequestSchema } from '../schemas/request.js';
 import { shuffle } from '../util/shuffle.js';
 import { requestWaitClause } from '../broadcast/queue/pure.js';
+import {
+  noteOutsideQueued, outsideCandidates, outsideRequestsAllowed, requestedTitle, satisfiesNamedRequest,
+} from '../music/outside-request-policy.js';
 
 export const router = express.Router();
 
@@ -375,9 +378,13 @@ async function resolveRequest(entry) {
         entry.refused = true;
         return resolved({ ack: agentRes.ack, track: agentRes.track, queuePosition: null });
       }
-      queue.log('request', `agent resolved: ${agentRes.track.title} — ${agentRes.track.artist}`);
+      // An `ext-` id came from searchOutsideLibrary: it streams from
+      // octo-fiesta and counts against the outside-request hourly cap.
+      const outside = subsonic.isOutsideSongId(agentRes.track.id);
+      if (outside) noteOutsideQueued(agentRes.track.id);
+      queue.log('request', `agent resolved${outside ? ' from outside the library' : ''}: ${agentRes.track.title} — ${agentRes.track.artist}`);
       entry.path = 'agent';
-      entry.pickSource = 'agent';
+      entry.pickSource = outside ? 'agent-outside' : 'agent';
       entry.pick = agentRes.track;
       entry.introScript = agentRes.introScript || null;
       return resolved({
@@ -540,6 +547,28 @@ async function resolveRequest(entry) {
     }
   }
 
+  // 2c'. Outside the library (octo-fiesta). Only for a NAMED artist the library
+  // could not answer — missing, or present without the song named — and only
+  // when the operator allows it; a mood or vibe ask never leaves the library.
+  // Before the mood/similar/starred rungs, which would otherwise fill the slot
+  // with a stand-in. Matching is strict (music/outside-request-policy.ts).
+  if (matched.artist) {
+    const namedTitle = requestedTitle(matched.search_terms, matched.artist);
+    const named = { artist: matched.artist, title: namedTitle };
+    if (!satisfiesNamedRequest(pick, named) && outsideRequestsAllowed()) {
+      try {
+        const songs = await subsonic.searchOutside([matched.artist, namedTitle].filter(Boolean).join(' '));
+        const hit = outsideCandidates(songs, { ...named, recentIds })[0];
+        if (hit) {
+          pick = hit;
+          pickSource = 'outside';
+        }
+      } catch (err) {
+        queue.log('error', `outside-library request search failed: ${err.message}`);
+      }
+    }
+  }
+
   // 2d. Mood-tagged library; matchRequest's "mood" shares the tagger vocabulary.
   if (!pick && matched.mood) {
     const moodPool = library.songsByMood(matched.mood);
@@ -669,6 +698,7 @@ async function resolveRequest(entry) {
     session.appendTurn({ role: 'dj', kind: 'request', text: dupAck, meta: { trackId: pick.id, requester } });
     return resolved({ ack: dupAck, track: { title: pick.title, artist: pick.artist }, queuePosition: null });
   }
+  noteOutsideQueued(pick.id);
   session.appendTurn({
     role: 'dj', kind: 'request',
     text: introScript || ack || `Queued "${pick.title}".`,

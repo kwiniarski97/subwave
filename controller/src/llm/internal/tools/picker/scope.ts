@@ -78,6 +78,10 @@ export interface PickerScope {
   // Request path only: registers identifyRequestedTrack. No-op unless a
   // web-search provider is ready. Never set on the per-track picker.
   resolveReferences: boolean;
+  // Request path only: registers searchOutsideLibrary, which offers songs
+  // octo-fiesta can fetch that the library does not hold. Set from
+  // music/outside-request-policy.ts at run start; never on the per-track picker.
+  outsideLibrary: boolean;
 }
 
 // Every field defaults to "no constraint". Spread over a partial so there is
@@ -105,6 +109,7 @@ const NO_SCOPE: PickerScope = {
   listenerFavourites: null,
   audioWaypoint: null,
   resolveReferences: false,
+  outsideLibrary: false,
 };
 
 export function pickerScope(partial: Partial<PickerScope> = {}): PickerScope {

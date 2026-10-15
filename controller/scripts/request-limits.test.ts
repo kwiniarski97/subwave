@@ -14,6 +14,7 @@ const d = settings.get().requests;
 assert.deepEqual(d, {
   enabled: true, maxPending: 6, globalHourlyCap: 30, repeatCooldownMin: 120,
   cooldownSec: 60, perIpHourlyCap: 8, onePendingPerIp: true,
+  outsideLibrary: false, outsideHourlyCap: 4,
 });
 
 // Patch applies + clamps.

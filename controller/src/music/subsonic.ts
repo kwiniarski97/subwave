@@ -678,6 +678,33 @@ export async function getAlbum(id, { signal }: { signal?: AbortSignal } = {}) {
   return rejectArchive(r.album?.song || []);
 }
 
+// One album with its record-level facts, for the album episode source. getAlbum
+// returns songs only; a song's artist is a track credit, which on a record with
+// guests is not the album's own artist. The year prefers the original release,
+// so a reissue is not dated to its pressing.
+export async function getAlbumRecord(id: string) {
+  const r = await call('getAlbum', { id }, RETRY_FAST_TRANSPORT);
+  const a = r.album;
+  if (!a?.id) return null;
+  const ord = Number(a.originalReleaseDate?.year);
+  const year = Number(a.year);
+  return {
+    id: String(a.id),
+    name: String(a.name ?? ''),
+    artist: String(a.artist ?? ''),
+    year: Number.isFinite(ord) && ord > 0 ? ord : Number.isFinite(year) && year > 0 ? year : null,
+    songs: rejectArchive(a.song || []),
+  };
+}
+
+// Random albums (getAlbumList2 type=random), the album-of-the-day skill's
+// candidate draw. Navidrome samples server-side, so there is no catalogue walk.
+export async function getRandomAlbums({ size = 20 }: { size?: number } = {}) {
+  const n = Math.max(1, Math.min(500, Math.floor(Number(size) || 20)));
+  const r = await call('getAlbumList2', { type: 'random', size: n }, RETRY_FAST_TRANSPORT);
+  return r.albumList2?.album || [];
+}
+
 // Single song lookup. The Child carries albumId, which is how manual album
 // tagging resolves a whole album from one track id.
 export async function getSong(id) {

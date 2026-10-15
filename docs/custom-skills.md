@@ -447,6 +447,7 @@ identical footing. It's read-mostly (no settings writes, no secrets):
 | `services.nowPlaying()` | the track on air — `{ artist, title, album, year, id }` or `null` |
 | `services.recentPlays(hours)` | play-log dedup sets `{ ids, keys }` over the last *hours* |
 | `services.library.getArtist(id)` / `.getAlbum(id)` / `.searchArtists(name, opts?)` / `.randomArtist(opts?)` / `.randomAlbums({ count })` | Navidrome/Subsonic reads. `randomAlbums` returns `{ id, name, artist, year, genre, songCount, duration, isCompilation }` (duration in seconds) |
+| `services.library.albumPlayable(albumId, { at? })` | `true` when the show on air at `at` (default now) can play any of the album under its own rules (blocklist, strict locks, playlists, length limits) |
 | `services.onThisDay()` | Wikipedia "on this day" events for today |
 | `services.fetchHeadlines({ feedUrl?, maxItems? })` | fetch + parse an RSS/Atom/RDF feed (what `feed:` uses) |
 | `services.recall.seen(key)` / `.remember(key)` | durable, cross-restart dedup ledger |
@@ -739,7 +740,8 @@ How it behaves:
 
 - **Choosing.** The skill draws random albums from Navidrome. It drops
   compilations, albums that are too short or too long, albums featured within
-  the repeat window, and albums with a recently played song. The station's model
+  the repeat window, albums with a recently played song, and albums the show's
+  own rules would leave nothing of. The station's model
   then chooses among the rest, or a random one is taken if the model is
   unavailable. If nothing survives two draws, any random album is taken, so the
   show always has a record.
@@ -748,13 +750,19 @@ How it behaves:
   strict locks) are skipped, never substituted. A listener request still plays
   in between.
 - **Talking.** Every seam during the album gets a link, whatever the host's
-  frequency, as long as links can air at all. A muted station, the soft token
+  frequency, as long as links can air at all. The per-link brief (one sourced
+  fact per link, no invented details, the last song is the closing track) rides
+  in the episode grounding every link writer reads, so it applies whichever
+  host is on. A muted station, the soft token
   budget and a show handover still keep it quiet.
-- **Finishing.** When the last song has been queued, the restriction lifts: the
-  pickers, the fallback playlist and the show's own **Play in order** playlist
-  (if it has one) all resume. The DJ is told once that the album has finished.
+- **Finishing.** At the first pick after the last song has been queued, the
+  restriction lifts: the pickers, the fallback playlist and the show's own
+  **Play in order** playlist (if it has one) all resume. From then on the DJ's
+  grounding says the album has finished, and to say so at most once.
 - **Running long.** The album does not delay the next show. At the show boundary
   the next show starts, and with **Fade at show end** the playing song fades.
-- **Restarts.** The album's position is saved per airing in
-  `state/album-cursors.json`, so a controller restart resumes at the next song.
+- **Restarts.** The album's position is saved per show in
+  `state/album-cursors.json`, with a separate position for a takeover of the
+  same show, so a controller restart, or returning from a takeover, resumes at
+  the next song.
   Featured albums are kept in `state/featured-albums.json` (the newest 512).

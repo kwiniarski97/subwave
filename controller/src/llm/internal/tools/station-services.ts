@@ -1,4 +1,5 @@
-import { randomLibraryArtist } from '../../../music/episode-source.js';
+import { randomLibraryArtist, albumPlayableFor } from '../../../music/episode-source.js';
+import * as settings from '../../../settings.js';
 // Station services — the curated facade a skill's data tool (a built-in or an
 // operator's custom tool.mjs) gets to look at the world before the DJ speaks.
 // This is the SINGLE place segment tools reach into the controller's internals
@@ -37,7 +38,9 @@ export interface StationServices {
   // Play-log lookup over the last `hours` — { ids, keys } sets for dedup.
   recentPlays: (hours: number) => { ids: Set<string>; keys: Set<string> };
   // Subsonic/Navidrome library reads.
-  library: { getArtist: typeof getArtist; getAlbum: typeof getAlbum; searchArtists: typeof searchArtists; randomArtist: typeof randomLibraryArtist; randomAlbums: typeof randomAlbums };
+  library: { getArtist: typeof getArtist; getAlbum: typeof getAlbum; searchArtists: typeof searchArtists; randomArtist: typeof randomLibraryArtist; randomAlbums: typeof randomAlbums;
+    // Whether the show on air at `at` (default now) can play any of the album.
+    albumPlayable: (albumId: string, opts?: { at?: string | number | Date | null }) => Promise<boolean> };
   // Wikipedia "on this day" events for today's date.
   onThisDay: () => Promise<any[]>;
   // Fetch + parse an RSS feed (defaults to the configured news feed).
@@ -68,7 +71,10 @@ export function buildStationServices(): StationServices {
     searchReady,
     nowPlaying: () => queue.current?.track ?? null,
     recentPlays: (hours: number) => queue.recentlyPlayed(hours),
-    library: { getArtist, getAlbum, searchArtists, randomArtist: randomLibraryArtist, randomAlbums },
+    library: {
+      getArtist, getAlbum, searchArtists, randomArtist: randomLibraryArtist, randomAlbums,
+      albumPlayable: (albumId, { at = null } = {}) => albumPlayableFor(albumId, settings.resolveActiveShow(at ? new Date(at) : undefined)),
+    },
     onThisDay: () => fetchOnThisDay(),
     fetchHeadlines,
     hashHeadline,

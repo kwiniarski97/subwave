@@ -118,6 +118,20 @@ export async function resolveAlbumEpisodeSource(albumId: string, show: EpisodeSh
   return { kind: 'album', identity: `${identity}:${revisionOf(ids)}`, album: cached.album, tracks, ids };
 }
 
+// Whether the show's rules leave anything of this album to play. The album
+// skill asks before choosing, so a strict show never prepares an album it
+// would then refuse, leaving the airing with no album at all. No show = no
+// rules to apply.
+export async function albumPlayableFor(albumId: string, show: EpisodeShow | null): Promise<boolean> {
+  if (!show) return true;
+  try {
+    await resolveAlbumEpisodeSource(albumId, show, 'probe');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function randomLibraryArtist({ minDistinctTracks = 2 }: { minDistinctTracks?: number } = {}): Promise<{ id: string; name: string } | null> {
   await library.load();
   const mirrored = db.artistIdentities(Math.max(1, minDistinctTracks));

@@ -12,7 +12,7 @@ type Album = { id: string; name: string; artist: string; year: number | null; ge
 const album = (id: string, extra: Partial<Album> = {}): Album =>
   ({ id, name: `Album ${id}`, artist: `Artist ${id}`, year: 1990, genre: 'Jazz', songCount: 9, duration: 45 * 60, isCompilation: false, ...extra });
 
-function services({ pages = [] as Album[][], featured = [] as string[], played = [] as string[], choose = (_: any): number | null => 0, search = [] as any[], down = false } = {}) {
+function services({ pages = [] as Album[][], featured = [] as string[], played = [] as string[], choose = (_: any): number | null => 0, search = [] as any[], down = false, playable = (_id: string): boolean => true, searchHangs = false } = {}) {
   const calls = { random: [] as number[], choose: [] as any[], search: [] as string[] };
   let page = 0;
   return {
@@ -23,13 +23,14 @@ function services({ pages = [] as Album[][], featured = [] as string[], played =
         if (down) throw new Error('ECONNREFUSED');
         return count === 1 ? [album('any')] : (pages[page++] ?? []);
       },
+      albumPlayable: async (id: string) => playable(id),
       getAlbum: async (id: string) => [{ id: `${id}-t2`, title: 'Two', discNumber: 1, track: 2, duration: 200 }, { id: `${id}-t1`, title: 'One', discNumber: 1, track: 1, duration: 180 }],
     },
     featured: { recentAlbumIds: async () => new Set(featured) },
     recentPlays: () => ({ ids: new Set(played), keys: new Set() }),
     choose: async (args: any) => { calls.choose.push(args); return choose(args); },
     searchReady: () => true,
-    searchWeb: async (q: string) => { calls.search.push(q); return { results: search }; },
+    searchWeb: async (q: string) => { calls.search.push(q); return searchHangs ? new Promise(() => {}) : { results: search }; },
     log: () => {},
   };
 }
@@ -96,4 +97,23 @@ test('Navidrome unreachable: available false', async () => {
   const out = await run(services({ down: true }));
   assert.equal(out.available, false);
   assert.match(out.reason, /unreachable/);
+});
+
+test('an album the show\'s rules cannot play is never chosen', async () => {
+  const s = services({ pages: [[album('rejected'), album('ok')]], playable: id => id !== 'rejected' });
+  const out = await run(s);
+  assert.equal(out.music.albumId, 'ok');
+  assert.equal(s.calls.choose.length, 0, 'only one playable survivor');
+});
+
+test('slow research is abandoned inside its budget, and the album still airs', async () => {
+  const saved = tool.timing.researchMs;
+  tool.timing.researchMs = 20;
+  try {
+    const out = await run(services({ pages: [[album('ok')]], searchHangs: true }));
+    assert.equal(out.available, true);
+    assert.deepEqual(out.data.research, []);
+  } finally {
+    tool.timing.researchMs = saved;
+  }
 });

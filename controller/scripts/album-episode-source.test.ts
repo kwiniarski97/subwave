@@ -40,7 +40,7 @@ const db = await import('../src/music/library-db.js');
 const library = await import('../src/music/library.js');
 const blocklist = await import('../src/music/blocklist.js');
 const settings = await import('../src/settings.js');
-const { resolveAlbumEpisodeSource, intersectEpisodeSource } = await import('../src/music/episode-source.js');
+const { resolveAlbumEpisodeSource, intersectEpisodeSource, albumPlayableFor } = await import('../src/music/episode-source.js');
 const { orderAlbumTracks } = await import('../src/broadcast/block-queue.js');
 const { orderAlbumTracks: shared } = await import('../src/music/album-order.js');
 const { showSchema } = await import('../src/schemas/show.js');
@@ -76,4 +76,9 @@ test('the album record is cached for a minute', async () => {
 
 test('an album id the server does not return is refused', async () => {
   await assert.rejects(resolveAlbumEpisodeSource('missing', show(), 'occ-1:missing'), /not in this library/);
+});
+
+test('albumPlayableFor answers whether the show\'s rules leave anything of the album', async () => {
+  assert.equal(await albumPlayableFor('lp', show()), true);
+  assert.equal(await albumPlayableFor('missing', show()), false);
 });

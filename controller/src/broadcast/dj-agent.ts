@@ -44,6 +44,7 @@ import { advanceRun, notePickShow, runActive } from './dj-agent/runs.js';
 import { prepareEpisodeContext, showPreparation, notifyPreparationChanged } from './show-preparation.js';
 import { albumLinkDue } from './album-episode-policy.js';
 import { albumWalker, type AlbumNext } from '../music/album-walk-next.js';
+import { albumSlot } from '../music/album-walk.js';
 import { prepareShortlistSearches } from './shortlist-search-preparation.js';
 import { pickSchemaBase, pickSystem, requestSystem, resolveEditorialLeanings, transitionChoiceNudge, type EditorialLeaningsContext } from './dj-agent/schemas.js';
 import { agenticDiscoverySelectionReason, agenticSelectionReason, agenticTrackRef, plainAgenticSelectionReason, resolveAgenticLeaningsUsage, verifiedAgenticReason, type AgenticPickResolution } from './dj-agent/leanings-review.js';
@@ -1453,9 +1454,10 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   if (!prepared) return { picked: false };
   const { album: source, occurrence } = prepared;
   const { album } = source;
+  const slot = albumSlot(occurrence);
   let next: AlbumNext;
   try {
-    next = await albumWalker.next(occurrence.showId, occurrence.id, source, queue.queuedIds());
+    next = await albumWalker.next(slot, occurrence.id, source, queue.queuedIds());
   } catch (err) {
     queue.log('error', `album walk for "${album.name}" failed: ${(err as Error).message} — picking normally`);
     return { picked: false };
@@ -1463,7 +1465,7 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   if (next.kind === 'finished') {
     let first = false;
     try {
-      first = await albumWalker.finish(occurrence.showId, next.sig, source.tracks.length);
+      first = await albumWalker.finish(slot, next.sig, source.tracks.length);
     } catch (err) {
       queue.log('error', `album finish for "${album.name}" not saved: ${(err as Error).message}`);
     }
@@ -1485,7 +1487,7 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   // Committed on a collision too, as the playlist walk does: a track push()
   // refused must not be retried on every pick.
   try {
-    await albumWalker.commit(occurrence.showId, next.track, next.index, next.sig);
+    await albumWalker.commit(slot, next.track, next.index, next.sig);
   } catch (err) {
     queue.log('error', `album position for "${album.name}" not saved: ${(err as Error).message}`);
   }
@@ -1515,6 +1517,10 @@ async function pickInOrder(queue, ctx, { wantLink, linkEligible, cheap, pickAnch
   if (album.picked) return album;
   const show = settings.resolveActiveShow(showAt ?? undefined);
   if (!isInOrderShow(show)) return album;
+  // An album that just finished on an in-order show: the playlist walk takes
+  // this very pick, so its turn carries the one-time note (a stand-down below
+  // returns the note to runTrackEvent instead, so it is never said twice).
+  if (album.note) eventText = `${eventText} ${album.note}`;
   ctx = await prepareEpisodeContext(ctx);
   const steering = showPreparation.read({ context: ctx }).music;
   if (steering) {

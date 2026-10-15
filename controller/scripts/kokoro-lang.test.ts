@@ -27,6 +27,8 @@ import {
   KOKORO_LANG_RE,
   KOKORO_LANG_ALIASES,
   canonicalKokoroLang,
+  KOKORO_PREFIX_LANGS,
+  kokoroPhonemizerLang,
 } from '../src/settings/vocab.js';
 
 const WORKER = fileURLToPath(new URL('./kokoro_worker.py', import.meta.url));
@@ -48,8 +50,8 @@ const prefixMap = Object.fromEntries(
 );
 assert.equal(
   Object.keys(prefixMap).length,
-  9,
-  'parsed all 9 voice-prefix entries out of kokoro_worker.py',
+  10,
+  'parsed all 10 voice-prefix entries out of kokoro_worker.py',
 );
 assert.equal(prefixMap.f, 'fr-fr', 'the `f` (French) voice prefix auto-detects as fr-fr');
 
@@ -62,6 +64,20 @@ assert.deepEqual(
   [...KOKORO_LANGS].sort(),
   'KOKORO_LANGS and kokoro_worker.py lang_mapping carry the same language codes',
 );
+
+// The TS copy of the prefix map decides whether the DJ prompt asks for
+// `{English}` span marks (Polish voices only), so it must agree entry for entry.
+assert.deepEqual({ ...KOKORO_PREFIX_LANGS }, prefixMap, 'KOKORO_PREFIX_LANGS mirrors the worker lang_mapping');
+assert.equal(prefixMap.l, 'pl', 'the `l` (Polish) voice prefix auto-detects as pl');
+
+// kokoroPhonemizerLang follows the worker: known override, else prefix, else en-gb.
+assert.equal(kokoroPhonemizerLang('lm_mateusz', ''), 'pl');
+assert.equal(kokoroPhonemizerLang('lm_mateusz', 'en-gb'), 'en-gb', 'an explicit override wins over the prefix');
+assert.equal(kokoroPhonemizerLang('bf_isabella', 'pl'), 'pl');
+assert.equal(kokoroPhonemizerLang('lm_mateusz', 'xx'), 'pl', 'an unknown override falls back to the prefix, as in the worker');
+assert.equal(kokoroPhonemizerLang('ff_siwis', 'fr'), 'fr-fr', 'a legacy alias is canonicalised first');
+assert.equal(kokoroPhonemizerLang('qq_unknown', ''), 'en-gb', 'unknown prefix -> British English, as in the worker');
+assert.equal(kokoroPhonemizerLang(undefined, undefined), 'en-gb');
 
 // --- legacy canonicalisation ----------------------------------------------
 

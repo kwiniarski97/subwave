@@ -17,6 +17,8 @@
 //
 // Pure: no settings, queue or session imports.
 
+import { stripEnglishSpanMarks } from '../audio/speech-text.js';
+
 /** Top-level keys of queue.snapshot() a listener may see. The queue items are
  *  already a projection (queue.snapshot()'s mapItem), so they pass through. */
 const PUBLIC_QUEUE_KEYS = [
@@ -87,5 +89,8 @@ export function publicSessionTurn(turn: TurnLike): PublicTurn {
   for (const k of PUBLIC_TURN_META_KEYS) {
     if (Object.prototype.hasOwnProperty.call(src, k)) meta[k] = src[k];
   }
-  return { t: turn?.t, role: turn?.role, kind: turn?.kind, text: turn?.text, meta };
+  // Kokoro's `{English}` span marks are TTS input, not something a listener reads.
+  if (typeof meta.say === 'string') meta.say = stripEnglishSpanMarks(meta.say);
+  const text = typeof turn?.text === 'string' ? stripEnglishSpanMarks(turn.text) : turn?.text;
+  return { t: turn?.t, role: turn?.role, kind: turn?.kind, text, meta };
 }

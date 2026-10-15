@@ -60,6 +60,7 @@ const KOKORO_LANG_LABELS: Record<string, string> = {
   hi: 'Hindi',
   it: 'Italian',
   ja: 'Japanese',
+  pl: 'Polish',
   'pt-br': 'Portuguese (Brazilian)',
   es: 'Spanish',
 };

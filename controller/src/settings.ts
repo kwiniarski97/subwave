@@ -793,6 +793,16 @@ export async function load() {
         typeof stored.requests?.onePendingPerIp === 'boolean'
           ? stored.requests.onePendingPerIp
           : DEFAULTS.requests.onePendingPerIp,
+      outsideLibrary:
+        typeof stored.requests?.outsideLibrary === 'boolean'
+          ? stored.requests.outsideLibrary
+          : DEFAULTS.requests.outsideLibrary,
+      outsideHourlyCap: intIn(
+        stored.requests?.outsideHourlyCap,
+        DEFAULTS.requests.outsideHourlyCap,
+        1,
+        60,
+      ),
     },
     personas,
     activePersonaId,
@@ -2541,7 +2551,7 @@ export async function prepareUpdate(patch, { themeIds }: { themeIds?: ReadonlySe
     // including the load-bearing part: an emptied admin input arrives as JSON
     // null, which is UNUSABLE rather than 0, so it leaves the stored value
     // alone instead of clamping to the field's floor and closing the request
-    // line. The rebuild keeps exactly the seven known keys.
+    // line. The rebuild keeps exactly the nine known keys.
     const rq = parseSettingsPatchKey<Record<string, unknown>>('requests', patch.requests);
     const curReq = next.requests || DEFAULTS.requests;
     const pick = <K extends keyof typeof curReq>(k: K) =>
@@ -2554,6 +2564,8 @@ export async function prepareUpdate(patch, { themeIds }: { themeIds?: ReadonlySe
       cooldownSec: pick('cooldownSec'),
       perIpHourlyCap: pick('perIpHourlyCap'),
       onePendingPerIp: pick('onePendingPerIp'),
+      outsideLibrary: pick('outsideLibrary'),
+      outsideHourlyCap: pick('outsideHourlyCap'),
     };
   }
   if ('webhooks' in patch) {

@@ -4,6 +4,10 @@
 // scripts/queue-block.test.ts.
 
 import { QUEUE_BLOCK_MAX_TRACKS, type QueueBlockKind, type QueueBlockOrder } from '../schemas/dj.js';
+// Moved to music/album-order.ts so the album episode source walks the same
+// order; re-exported so existing importers keep this path.
+import { orderAlbumTracks } from '../music/album-order.js';
+export { orderAlbumTracks };
 
 /** As much of a Subsonic child as the plan reads. */
 export interface BlockSong {
@@ -33,27 +37,6 @@ export interface BlockPlan {
   skipped: BlockSkip[];
   /** How many the cap removed from the tail. 0 in the ordinary case. */
   truncated: number;
-}
-
-/**
- * Sort by disc, then track, preserving source order for ties. Missing discs mean disc 1;
- * missing tracks sort last within their disc.
- */
-export function orderAlbumTracks<T extends BlockSong>(songs: readonly T[]): T[] {
-  const num = (v: unknown, fallback: number): number => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
-  return songs
-    .map((song, at) => ({ song, at }))
-    .sort((a, b) => {
-      const disc = num(a.song.discNumber, 1) - num(b.song.discNumber, 1);
-      if (disc !== 0) return disc;
-      const track = num(a.song.track, Number.MAX_SAFE_INTEGER) - num(b.song.track, Number.MAX_SAFE_INTEGER);
-      if (track !== 0) return track;
-      return a.at - b.at;
-    })
-    .map(({ song }) => song);
 }
 
 /**

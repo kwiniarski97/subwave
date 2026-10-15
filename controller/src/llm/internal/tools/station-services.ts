@@ -2,8 +2,9 @@ import { randomLibraryArtist } from '../../../music/episode-source.js';
 // Station services — the curated facade a skill's data tool (a built-in or an
 // operator's custom tool.mjs) gets to look at the world before the DJ speaks.
 // This is the SINGLE place segment tools reach into the controller's internals
-// (web search, the music library, the queue, feeds, durable recall). It is
-// passed as the third argument to every tool fetcher:
+// (web search, the music library, the queue, feeds, durable recall, one
+// bounded model choice). It is passed as the third argument to every tool
+// fetcher:
 //
 //   export default async (ctx, state, services) => data
 //
@@ -21,6 +22,9 @@ import { searchWeb, searchReady } from '../../../skills/web-search.js';
 import { fetchOnThisDay, curiositySeen, recordCuriosity } from '../../../skills/curiosity.js';
 import { fetchHeadlines, hashHeadline } from '../../../skills/feed.js';
 import { getArtist, getAlbum, searchArtists } from '../../../music/subsonic.js';
+import { randomAlbums } from '../../../music/random-albums.js';
+import { featuredAlbums } from '../../../music/featured-albums.js';
+import { chooseOption } from '../../choose.js';
 
 export interface StationServices {
   // Web search via the operator's configured provider (DuckDuckGo / Tavily /
@@ -33,7 +37,7 @@ export interface StationServices {
   // Play-log lookup over the last `hours` — { ids, keys } sets for dedup.
   recentPlays: (hours: number) => { ids: Set<string>; keys: Set<string> };
   // Subsonic/Navidrome library reads.
-  library: { getArtist: typeof getArtist; getAlbum: typeof getAlbum; searchArtists: typeof searchArtists; randomArtist: typeof randomLibraryArtist };
+  library: { getArtist: typeof getArtist; getAlbum: typeof getAlbum; searchArtists: typeof searchArtists; randomArtist: typeof randomLibraryArtist; randomAlbums: typeof randomAlbums };
   // Wikipedia "on this day" events for today's date.
   onThisDay: () => Promise<any[]>;
   // Fetch + parse an RSS feed (defaults to the configured news feed).
@@ -42,6 +46,12 @@ export interface StationServices {
   // Durable, cross-restart dedup ledger — remember what was aired so it isn't
   // repeated days later. (Backs the curiosity skill; available to any skill.)
   recall: { seen: (key: string) => boolean; remember: (key: string) => void };
+  // Albums an album-of-the-day airing featured in the last `days` (the
+  // controller records them; skills only read).
+  featured: { recentAlbumIds: (days: number) => Promise<Set<string>> };
+  // Ask the station's model to choose one of `options`: an index, or null when
+  // the model is unavailable, over budget, slow or wrong. Never throws.
+  choose: typeof chooseOption;
   // Append a namespaced line to the station event log.
   log: (msg: string) => void;
 }
@@ -58,11 +68,13 @@ export function buildStationServices(): StationServices {
     searchReady,
     nowPlaying: () => queue.current?.track ?? null,
     recentPlays: (hours: number) => queue.recentlyPlayed(hours),
-    library: { getArtist, getAlbum, searchArtists, randomArtist: randomLibraryArtist },
+    library: { getArtist, getAlbum, searchArtists, randomArtist: randomLibraryArtist, randomAlbums },
     onThisDay: () => fetchOnThisDay(),
     fetchHeadlines,
     hashHeadline,
     recall: { seen: (key: string) => curiositySeen(key), remember: (key: string) => recordCuriosity(key) },
+    featured: { recentAlbumIds: (days: number) => featuredAlbums.recentIds(days) },
+    choose: chooseOption,
     log: (msg: string) => queue.log('scheduler', `[skill] ${msg}`),
   };
   return cached;

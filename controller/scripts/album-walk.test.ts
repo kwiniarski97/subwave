@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { albumWalkSig, isAlbumWalkFinished, nextInAlbum } from '../src/music/album-walk.js';
+import { albumSlot, albumSlotKeys, albumWalkSig, isAlbumWalkFinished, nextInAlbum } from '../src/music/album-walk.js';
 import { cursorFor } from '../src/music/playlist-order.js';
 import { createPlaylistCursorStore } from '../src/music/playlist-cursors.js';
 import { createAlbumWalker } from '../src/music/album-walk-next.js';
@@ -93,4 +93,21 @@ test('the album store never moves the playlist store (separate files, same show 
   const reread = store('playlist-cursors.json');
   assert.deepEqual(await reread.get('s1'), before, 'the playlist position on disk is untouched');
   assert.equal(isAlbumWalkFinished(await reread.get('s1'), next.sig), false);
+});
+
+test('a takeover of the same show keeps its own slot, so the scheduled walk resumes after it', async () => {
+  const walker = createAlbumWalker(createPlaylistCursorStore({ file: join(dir, 'slots.json'), knownShowIds: () => albumSlotKeys(['s1']) }));
+  const scheduled = albumSlot({ showId: 's1', source: 'scheduled' });
+  const takeover = albumSlot({ showId: 's1', source: 'takeover' });
+  assert.notEqual(scheduled, takeover);
+  const first = await walker.next(scheduled, 'scheduled:s1:1', source);
+  assert.ok(first.kind === 'track');
+  await walker.commit(scheduled, first.track, first.index, first.sig);
+  const during = await walker.next(takeover, 'takeover:s1:2', source);
+  assert.ok(during.kind === 'track');
+  await walker.commit(takeover, during.track, during.index, during.sig);
+  await walker.finish(takeover, during.sig, 4);
+  const back = await walker.next(scheduled, 'scheduled:s1:1', source);
+  assert.equal(back.kind === 'track' && back.track.id, 'b', 'the scheduled airing resumes, it does not replay from track 1');
+  assert.equal(walker.finishedNow(scheduled, 'scheduled:s1:1', 'lp'), false);
 });

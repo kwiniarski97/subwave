@@ -14,6 +14,18 @@ export function albumWalkSig(occurrenceId: string, albumId: string): string {
   return `album:${occurrenceId}:${albumId}`;
 }
 
+// The walker's store key. A scheduled airing and a takeover of the same show
+// get separate slots: one slot per show let a takeover's album overwrite the
+// scheduled airing's position, which then replayed from track 1 on return.
+export function albumSlot(occurrence: { showId: string; source: 'scheduled' | 'takeover' }): string {
+  return `${occurrence.source}:${occurrence.showId}`;
+}
+
+// Every slot a live show can own, for the store's prune-on-write.
+export function albumSlotKeys(showIds: Iterable<string>): string[] {
+  return [...showIds].flatMap(id => [`scheduled:${id}`, `takeover:${id}`]);
+}
+
 // A finished walk is recorded as its own cursor rather than inferred from the
 // position, so "the album has finished" is said once and survives a restart.
 export function isAlbumWalkFinished(cursor: PlaylistCursor | null | undefined, sig: string): boolean {

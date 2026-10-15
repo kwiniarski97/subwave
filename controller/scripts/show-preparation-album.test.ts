@@ -62,6 +62,9 @@ test('an album episode is ready with an "<album> by <artist>" subject and album 
   assert.equal(view.music?.kind, 'album');
   assert.match(view.editorial, /album order/);
   assert.doesNotMatch(view.editorial, /prepared artist/);
+  assert.match(view.editorial, /one fact or piece of trivia/, 'the per-link brief reaches the speaking model through the grounding');
+  assert.match(view.editorial, /closing track/);
+  assert.match(view.editorial, /"libraryRecords":\[\]/, 'the tool tracklist already lists the album; research is not crowded out');
 });
 
 test('the ready hook runs once per accepted preparation, not again after a restart', async () => {
@@ -85,6 +88,10 @@ test('a finished album stops steering read().music, but preparedAlbum still answ
   assert.equal(owner.read({ context }).status.kind, 'ready', 'the research stays; only the music restriction lifts');
   assert.equal(owner.preparedAlbum({ context })?.album.album.id, 'lp');
   assert.equal(owner.preparedAlbum({ context })?.occurrence.id, 'album-finish');
+  const after = owner.read({ context }).editorial;
+  assert.match(after, /"Record" has finished; the rest of the show is open/, 'links after the finish know the album is over');
+  assert.doesNotMatch(after, /play this prepared album in album order/);
+  assert.match(after, /<episode-source-data>/, 'the research stays available');
 });
 
 test('grounding wording for artist episodes is unchanged', () => {

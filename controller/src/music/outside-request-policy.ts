@@ -121,6 +121,46 @@ export function outsideCandidates(
     && satisfiesNamedRequest(s, { artist, title }));
 }
 
+// --- the request agent's backstop ----------------------------------------
+
+// A search phrase the listener actually wrote, as whole words.
+function textNames(text: string, phrase: string): boolean {
+  const p = fold(phrase);
+  return !!p && ` ${fold(text)} `.includes(` ${p} `);
+}
+
+/**
+ * The outside song a request-agent run must queue in place of the pick it
+ * made, or null to keep that pick. The prompt says to take an outside song
+ * the run found, but a small model can still fall back to the frame's
+ * "closest thing" rule and air a stand-in for a song it had in hand — so this
+ * holds the run to the same strict match searchOutsideLibrary applied.
+ *
+ * Only a searchOutsideLibrary call that came back with tracks, and only an ask
+ * the listener's OWN text names (artist, and the title when one was given):
+ * the model chose the call's arguments, and they must not be what turns a
+ * "something in the mood of…" request into a specific song. A pick that already
+ * answers that ask — the library's copy, or an outside id — stands.
+ */
+export function outsideOverride(
+  pick: any,
+  toolCalls: ReadonlyArray<any> | null | undefined,
+  requestText: string,
+): any | null {
+  if (!pick || isOutsideSongId(pick.id) || !Array.isArray(toolCalls)) return null;
+  for (const call of toolCalls) {
+    if (call?.name !== 'searchOutsideLibrary') continue;
+    const artist = typeof call.args?.artist === 'string' ? call.args.artist.trim() : '';
+    const title = typeof call.args?.title === 'string' ? call.args.title.trim() : '';
+    const tracks = Array.isArray(call.result?.tracks) ? call.result.tracks : [];
+    const hit = tracks.find((t: any) => isOutsideSongId(t?.id));
+    if (!hit || !textNames(requestText, artist) || (title && !textNames(requestText, title))) continue;
+    if (satisfiesNamedRequest(pick, { artist, title: title || null })) return null;
+    return hit;
+  }
+  return null;
+}
+
 // --- gate and hourly cap ---------------------------------------------------
 
 const HOUR_MS = 3_600_000;

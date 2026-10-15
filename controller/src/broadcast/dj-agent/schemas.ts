@@ -399,14 +399,18 @@ ${findingCandidates}${dj.effectsGuidance()}${editorialLeaningsPrompt}`;
 }
 
 // Exported for scripts/llm-bench, like requestSchema above.
-export function requestSystem(persona = session.onAirPersona()) {
+// `outsideLibrary` is the run's scope flag, the same one that offers
+// searchOutsideLibrary: the tool's description alone loses to the frame's
+// substitution rule, and a small model then airs a stand-in over the exact
+// outside song it found.
+export function requestSystem(persona = session.onAirPersona(), { outsideLibrary = false }: { outsideLibrary?: boolean } = {}) {
   // Follows requestSchema() above: with the station voice off there IS no
   // "intro" field, and a prompt that keeps talking about one invites the model
   // to stuff the intro into "ack" instead.
   const wantIntro = autoVoiceAllowed();
   const frame = instruction('request', 'frame', {
     ackFields: wantIntro ? 'the "ack" and "intro"' : 'the "ack"',
-  });
+  }) + (outsideLibrary ? ` ${instruction('request', 'outside-library')}` : '');
   // The air-time clause only applies when there IS an intro to air.
   const currentTrack = wantIntro
     ? `${instruction('request', 'current-track-with-intro')}${dj.AIR_TIME_CLAUSE}`

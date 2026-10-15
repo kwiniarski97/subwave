@@ -3858,6 +3858,8 @@ export const requestsPatchSchema = settingsBlockOf({
   repeatCooldownMin: settingsRequestsInt({ min: 0, max: 1440 }),
   cooldownSec: settingsRequestsInt({ min: 5, max: 600 }),
   perIpHourlyCap: settingsRequestsInt({ min: 1, max: 100 }),
+  outsideLibrary: settingsRequestsBool(),
+  outsideHourlyCap: settingsRequestsInt({ min: 1, max: 60 }),
 });
 
 // --- the mood family -------------------------------------------------------

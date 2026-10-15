@@ -334,6 +334,8 @@ export interface RequestsForm {
   globalHourlyCap: string;
   repeatCooldownMin: string;
   onePendingPerIp: boolean;
+  outsideLibrary: boolean;
+  outsideHourlyCap: string;
 }
 
 export interface SilenceTrimForm {
@@ -548,6 +550,8 @@ export interface SettingsData {
       cooldownSec?: number;
       perIpHourlyCap?: number;
       onePendingPerIp?: boolean;
+      outsideLibrary?: boolean;
+      outsideHourlyCap?: number;
     };
     scrobble?: {
       lastfm?: Partial<ScrobbleLastfmForm>;

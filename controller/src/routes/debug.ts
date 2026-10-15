@@ -39,7 +39,7 @@ import { getStationTimezone } from '../time.js';
 import { publicOrigin } from './public.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { BadStatePathError, listStateDir } from '../util/state-tree.js';
-import { buildPickerTools, PICKER_TOOLS } from '../llm/tools.js';
+import { buildPickerTools, PICKER_TOOLS, REQUEST_ONLY_PICKER_TOOLS } from '../llm/tools.js';
 import { livePickerScope, selectionContextForPick, shouldExplore, runActive } from '../broadcast/dj-agent.js';
 import { nearestId } from '../llm/sdk.js';
 import { pickerAgent } from '../broadcast/dj-agent/agents.js';
@@ -62,7 +62,6 @@ export const router = express.Router();
 // against the daily budget and feed the context-window stats. Opt-in search
 // preparation uses the live airing cache; comparisons never record offers.
 // ---------------------------------------------------------------------------
-const REQUEST_ONLY_PICKER_TOOL = 'identifyRequestedTrack';
 const DISCOVERY_BENCH_ENABLED = /^(1|true|yes|on)$/i.test(process.env.SUBWAVE_DISCOVERY_BENCH || '');
 
 function discoveryBenchDisabled(res: express.Response): boolean {
@@ -85,7 +84,7 @@ router.get('/debug/discovery', requireAdmin, async (_req, res) => {
     res.json({
       current: current ? { id: current.id, title: current.title, artist: current.artist, genre: current.genre } : null,
       tools: PICKER_TOOLS
-        .filter((entry) => entry.name !== REQUEST_ONLY_PICKER_TOOL)
+        .filter((entry) => !REQUEST_ONLY_PICKER_TOOLS.has(entry.name))
         .map((entry) => ({
           name: entry.name,
           available: !!tools[entry.name],
@@ -101,7 +100,7 @@ router.post('/debug/discovery/tool/:tool', requireAdmin, async (req, res) => {
   if (discoveryBenchDisabled(res)) return;
   try {
     const name = String(req.params.tool || '');
-    if (name === REQUEST_ONLY_PICKER_TOOL || !PICKER_TOOLS.some((entry) => entry.name === name)) {
+    if (REQUEST_ONLY_PICKER_TOOLS.has(name) || !PICKER_TOOLS.some((entry) => entry.name === name)) {
       return res.status(404).json({ error: 'unknown next-track discovery tool' });
     }
     const { tools } = await discoveryBench();

@@ -103,6 +103,8 @@ export function settingsForm(v: NonNullable<SettingsData['values']>): FormState 
       globalHourlyCap: String(v.requests?.globalHourlyCap ?? 30),
       repeatCooldownMin: String(v.requests?.repeatCooldownMin ?? 120),
       onePendingPerIp: v.requests?.onePendingPerIp !== false,
+      outsideLibrary: v.requests?.outsideLibrary === true,
+      outsideHourlyCap: String(v.requests?.outsideHourlyCap ?? 4),
     },
     kokoroLang: v.tts?.kokoro?.lang ?? '',
     // Absent (a settings.json predating the key) reads as OFF, matching the

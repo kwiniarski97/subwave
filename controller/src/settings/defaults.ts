@@ -209,6 +209,12 @@ export const DEFAULTS = {
     cooldownSec: 60,
     perIpHourlyCap: 8,
     onePendingPerIp: true,
+    // A named request the library cannot answer may queue a song from
+    // octo-fiesta (OCTO_FIESTA_URL). Off: any listener could pull any song onto
+    // the broadcast, so this is the operator's call. The cap counts outside
+    // songs queued per rolling hour. music/outside-request-policy.ts.
+    outsideLibrary: false,
+    outsideHourlyCap: 4,
   },
   // Global DJ prompt template; '' = DEFAULT_DJ_PROMPT_TEMPLATE. Always the
   // RESOLVED text of the active djPrompts entry, so renderDjPrompt (and an older

@@ -31,6 +31,9 @@ import { classifyUnsupportedLabels, directRequestUnsupported, isRefusedOutcome, 
 import { requestWaitClause } from '../broadcast/queue/pure.js';
 import { matchedRequestLookups, matchedRequestStandIn } from '../util/request-claim.js';
 import { ARTIST_VARIETY_WINDOW, drawRequestCandidate } from '../broadcast/dj-agent/artist-guard.js';
+import {
+  noteOutsideQueued, outsideCandidates, outsideRequestsAllowed, requestedTitle, satisfiesNamedRequest,
+} from '../music/outside-request-policy.js';
 
 export const router = express.Router();
 
@@ -364,9 +367,13 @@ async function resolveRequest(entry) {
         entry.outcome = agentRes.refused;
         return resolved({ ack: agentRes.ack, track: agentRes.track, queuePosition: null });
       }
-      queue.log('request', `agent resolved: ${agentRes.track.title} — ${agentRes.track.artist}`);
+      // An `ext-` id came from searchOutsideLibrary: it streams from
+      // octo-fiesta and counts against the outside-request hourly cap.
+      const outside = subsonic.isOutsideSongId(agentRes.track.id);
+      if (outside) noteOutsideQueued(agentRes.track.id);
+      queue.log('request', `agent resolved${outside ? ' from outside the library' : ''}: ${agentRes.track.title} — ${agentRes.track.artist}`);
       entry.path = 'agent';
-      entry.pickSource = 'agent';
+      entry.pickSource = outside ? 'agent-outside' : 'agent';
       entry.pick = agentRes.track;
       entry.introScript = agentRes.introScript || null;
       return resolved({
@@ -450,7 +457,8 @@ async function resolveRequest(entry) {
   const searches: Array<{ term: string; hits: any[] }> = [];
   const varietyWindow = settings.get().llm?.artistVarietyWindow ?? ARTIST_VARIETY_WINDOW;
   const cdMin = Number(settings.get().requests.repeatCooldownMin ?? 120);
-  const selection = await resolveDirectRequest(matched, {
+  const recentIds = cdMin > 0 ? queue.recentlyPlayedIds(cdMin / 60) : new Set<string>();
+  let selection = await resolveDirectRequest(matched, {
     text,
     catalog: {
       ...subsonic,
@@ -473,7 +481,7 @@ async function resolveRequest(entry) {
       }
       return drawn.pick;
     },
-    recentIds: cdMin > 0 ? queue.recentlyPlayedIds(cdMin / 60) : new Set<string>(),
+    recentIds,
     queuedIds: queue.queuedIds(),
     currentId: queue.current?.track?.id,
     moodSongs: async mood => { await library.load(); return library.songsByMood(mood); },
@@ -495,6 +503,25 @@ async function resolveRequest(entry) {
     ...(currentTrack?.id && ON_AIR_REFERENCE.test(text)
       ? { similarSongs: () => subsonic.getSimilarSongs(currentTrack.id, { count: 20 }) } : {}),
   });
+
+  // Outside the library (octo-fiesta). Only for a NAMED artist the library
+  // could not answer — missing, or present without the song named — and only
+  // when the operator allows it; a mood or vibe ask never leaves the library.
+  // A resolver stand-in fails satisfiesNamedRequest, so an outside hit replaces
+  // it. Matching is strict (music/outside-request-policy.ts).
+  if (matched.artist && selection.outcome !== 'unsupported') {
+    const namedTitle = requestedTitle(matched.search_terms, matched.artist);
+    const namedAsk = { artist: matched.artist, title: namedTitle };
+    if (!satisfiesNamedRequest(selection.track, namedAsk) && outsideRequestsAllowed()) {
+      try {
+        const songs = await subsonic.searchOutside([matched.artist, namedTitle].filter(Boolean).join(' '));
+        const hit = outsideCandidates(songs, { ...namedAsk, recentIds })[0];
+        if (hit) selection = { ...selection, track: hit, source: 'outside', outcome: 'matched', unmetPreferences: [] };
+      } catch (err) {
+        queue.log('error', `outside-library request search failed: ${err.message}`);
+      }
+    }
+  }
   const pick = selection.track;
   const pickSource = selection.source;
   entry.outcome = selection.outcome;
@@ -585,6 +612,7 @@ async function resolveRequest(entry) {
     session.appendTurn({ role: 'dj', kind: 'request', text: dupAck, meta: { trackId: pick.id, requester } });
     return resolved({ ack: dupAck, track: { title: pick.title, artist: pick.artist }, queuePosition: null });
   }
+  noteOutsideQueued(pick.id);
   session.appendTurn({
     role: 'dj', kind: 'request',
     text: introScript || ack || `Queued "${pick.title}".`,

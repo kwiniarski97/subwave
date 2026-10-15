@@ -29,13 +29,17 @@ function buildAuth() {
 // a song, and octo-fiesta keys a song's cover art by the song id.
 const OCTO_SONG_ID_RE = /^ext-[a-z]+-song-/;
 
-function baseUrlFor(params: Record<string, unknown>): string {
-  const octo = config.navidrome.octoFiestaUrl;
-  return octo && OCTO_SONG_ID_RE.test(String(params.id ?? '')) ? octo : config.navidrome.url;
+export function isOutsideSongId(id: unknown): boolean {
+  return OCTO_SONG_ID_RE.test(String(id ?? ''));
 }
 
-function buildUrl(endpoint, params = {}) {
-  const url = new URL(`${baseUrlFor(params)}/rest/${endpoint}`);
+function baseUrlFor(params: Record<string, unknown>): string {
+  const octo = config.navidrome.octoFiestaUrl;
+  return octo && isOutsideSongId(params.id) ? octo : config.navidrome.url;
+}
+
+function buildUrl(endpoint, params = {}, base = baseUrlFor(params)) {
+  const url = new URL(`${base}/rest/${endpoint}`);
   const auth = buildAuth();
   url.searchParams.set('u', auth.u);
   url.searchParams.set('t', auth.t);
@@ -109,6 +113,9 @@ type CallOptions = {
   // The caller's own deadline (a picker tool's abortSignal), on top of the
   // per-request timeout. An abort ends the call; it is never retried.
   signal?: AbortSignal;
+  // Send this call to another Subsonic server (octo-fiesta) instead of the
+  // one the id routes to. Only searchOutside() sets it.
+  baseUrl?: string;
 };
 
 // Reads and operations that are explicitly idempotent opt in at their call
@@ -165,7 +172,7 @@ async function boundedFetch(
 async function call(endpoint, params = {}, options: CallOptions = {}) {
   const started = Date.now();
   try {
-    const url = buildUrl(endpoint, params);
+    const url = buildUrl(endpoint, params, options.baseUrl ?? baseUrlFor(params));
     const res = await boundedFetch(endpoint, url, options);
     if (!res.ok) {
       // First 200 chars of the body, so triage sees the real server message.
@@ -332,6 +339,27 @@ export async function searchPage(
   const raw = r.searchResult3?.song || [];
   const songs = raw.filter((s) => !isStationArchive(s));
   return { songs: includeBlocked ? songs : blocklist.rejectBlocked(songs), rawCount: raw.length };
+}
+
+// Songs octo-fiesta can fetch that the library does NOT hold, for a listener
+// request the library could not answer (music/outside-request-policy.ts). Its
+// search3 merges the library's own hits with the providers'; only external
+// `ext-` songs come back, so a library song never arrives under a second id.
+// [] when OCTO_FIESTA_URL is unset. Blocklist applies as everywhere else.
+export async function searchOutside(
+  query: string,
+  { songCount = 20, signal }: { songCount?: number; signal?: AbortSignal } = {},
+): Promise<any[]> {
+  const octo = config.navidrome.octoFiestaUrl;
+  if (!octo) return [];
+  const r = await call(
+    'search3',
+    { query, songCount, artistCount: 0, albumCount: 0 },
+    { ...RETRY_FAST_TRANSPORT, signal, baseUrl: octo },
+  );
+  const songs = (r.searchResult3?.song || [])
+    .filter((s: any) => s?.isExternal === true && isOutsideSongId(s.id));
+  return blocklist.rejectBlocked(songs);
 }
 
 export async function getRandomSongs({ size = 20, genre, fromYear, toYear }: { size?: number; genre?: string; fromYear?: number; toYear?: number } = {}) {

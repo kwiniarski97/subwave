@@ -20,7 +20,7 @@ const { runTrackEvent } = await import('../src/broadcast/dj-agent.js');
 const { shortlistConversation, shortlistPickPrompt } = await import('../src/broadcast/dj-agent/shortlist-pick.js');
 const { pickSystem } = await import('../src/broadcast/dj-agent/schemas.js');
 const { shortlistSourceHint } = await import('../src/music/shortlist-presentation.js');
-const { PICKER_TOOLS, clearPickerSourceCache } = await import('../src/llm/tools.js');
+const { PICKER_TOOLS, REQUEST_ONLY_PICKER_TOOLS, clearPickerSourceCache } = await import('../src/llm/tools.js');
 
 const songs = Array.from({ length: 6 }, (_, i) => ({ id: `guidance-${i}`, title: `Track ${i}`, artist: `Artist ${i}`, album: `Album ${i}`, duration: 240,
   ...(i === 0 ? { introMs: 12_000 } : {}),
@@ -132,7 +132,7 @@ test('Shortlist system describes compact input while Agentic retains its session
 });
 
 test('every discovery tool has a readable source label; request resolution is excluded', () => {
-  for (const { name: source } of PICKER_TOOLS.filter(tool => tool.name !== 'identifyRequestedTrack')) {
+  for (const { name: source } of PICKER_TOOLS.filter(tool => !REQUEST_ONLY_PICKER_TOOLS.has(tool.name))) {
     assert.ok(shortlistSourceHint([source]), `missing label: ${source}`);
   }
   assert.equal(shortlistSourceHint(['unknown']), null);

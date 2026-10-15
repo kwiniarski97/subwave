@@ -74,6 +74,8 @@ export function StationSection({ data, form, setForm, busy, saveSettings, fieldE
       globalHourlyCap: parseInt(form.requests.globalHourlyCap, 10),
       repeatCooldownMin: parseInt(form.requests.repeatCooldownMin, 10),
       onePendingPerIp: form.requests.onePendingPerIp,
+      outsideLibrary: form.requests.outsideLibrary,
+      outsideHourlyCap: parseInt(form.requests.outsideHourlyCap, 10),
     },
   });
 
@@ -510,6 +512,44 @@ export function StationSection({ data, form, setForm, busy, saveSettings, fieldE
             <div className="field-hint">
               On: an IP can&apos;t queue a second request until its first one has played. Stops
               one listener from stacking the whole queue with requests of their own.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Requests from outside the library</Label>
+            <Seg
+              options={[...ON_OFF]}
+              value={form.requests.outsideLibrary ? 'on' : 'off'}
+              onChange={id =>
+                setForm(f => ({ ...f, requests: { ...f.requests, outsideLibrary: id === 'on' } }))
+              }
+            />
+            <div className="field-hint">
+              On: when a listener names an artist or song your library doesn&apos;t have, the DJ
+              can stream it in through octo-fiesta. Needs <code>OCTO_FIESTA_URL</code> in the
+              controller&apos;s environment; without it this does nothing. Only an exact match on
+              the named artist (and song) is queued, never for mood or genre asks. Any listener
+              can name any song, so off by default.
+            </div>
+          </div>
+
+          <div className="field">
+            <Label>Outside requests per hour</Label>
+            <Input
+              className="mono-num w-28"
+              aria-label="Outside requests per hour"
+              type="number"
+              min={1}
+              max={60}
+              step={1}
+              value={form.requests.outsideHourlyCap}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setForm(f => ({ ...f, requests: { ...f.requests, outsideHourlyCap: e.target.value } }))
+              }
+            />
+            <div className="field-hint">
+              Songs from outside the library the station queues per rolling hour, across every
+              listener. Past it, requests fall back to the library. Clamped 1&ndash;60.
             </div>
           </div>
         </div>

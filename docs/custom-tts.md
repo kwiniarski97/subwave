@@ -199,3 +199,5 @@ Two different doors, so pick by shape:
 - [docs/tts-heavy.md](tts-heavy.md) — the bundled heavy voices (Chatterbox,
   PocketTTS) and the acoustic analyzer, including running analysis on another
   machine.
+- [docs/kokoro-polish.md](kokoro-polish.md) — the Polish Kokoro voice (`lm_mateusz`)
+  and `{English}` span marks for English titles in Polish lines.

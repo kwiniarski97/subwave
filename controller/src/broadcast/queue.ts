@@ -3693,8 +3693,11 @@ class Queue {
   // append behind the held item while the asynchronous selection is running.
   // Fire-and-forget; pickerBusy is the reentry guard.
   runPickCycle({ isAutonomous, pickAnchorItem = null }: { isAutonomous: boolean; pickAnchorItem?: QueueItem | null }) {
+    // Whether a link could air on this seam at all. The cadence below decides
+    // whether one does; an album-of-the-day walk overrides only the cadence.
+    const linkEligible = !!this.autoLink && isAutonomous && !!this.history[0];
     let wantLink = false;
-    if (this.autoLink && isAutonomous && this.history[0]) {
+    if (linkEligible) {
       this.tracksUntilLink--;
       if (this.tracksUntilLink <= 0) {
         this.tracksUntilLink = pickLinkInterval();
@@ -3802,6 +3805,7 @@ class Queue {
         await djAgent.runTrackEvent(this, pickCtx, {
           // The mic-pass owns this seam; an outgoing link cannot follow it.
           wantLink: wantLink && !finalTrackHandoff,
+          linkEligible: linkEligible && !finalTrackHandoff,
           showAt,
           pickAnchor: pickAnchorItem?.track ?? null,
           anchorPrior: pickAnchorItem ? (this.current?.track ?? null) : null,

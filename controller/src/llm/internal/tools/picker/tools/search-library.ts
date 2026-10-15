@@ -80,9 +80,22 @@ export default definePickerTool({
         // hit as the library's spelling of what the listener named, and a
         // neighbour by feel is not that.
         const filteredNote = songs.length > 0 ? emptyResult(songs.length, 'these are the closest matches by feel instead, not literal matches for what was searched').note : null;
+        //
+        // The fallback fails OPEN. The literal search already answered, so an
+        // embedding provider that cannot be reached means "no vibe matches",
+        // not a failed search: reported as { error } (a bare `fetch failed`
+        // from an unreachable Ollama), the model loses the one honest signal
+        // it had — that the library does not hold what was named — and grabs
+        // whatever another tool returned. A deadline is still a deadline.
         if (embeddings.isAvailable()) {
-          await library.load();
-          const vec = await embeddings.embedQueryText(query.trim(), library.embeddingIndexTextMode(), { abortSignal });
+          let vec: number[] | null = null;
+          try {
+            await library.load();
+            vec = await embeddings.embedQueryText(query.trim(), library.embeddingIndexTextMode(), { abortSignal });
+          } catch (err) {
+            if (abortSignal?.aborted) return toolDeadlineResult('searchLibrary');
+            console.warn(`[searchLibrary] vibe fallback unavailable: ${(err as Error).message}`);
+          }
           if (vec) {
             const sem = collect(library.tracksByVector(vec, candidateLimit(20), { excludeIds: knnExclude }));
             if (sem.length > 0) return filteredNote ? { tracks: sem, note: filteredNote, via: 'vibe' } : { tracks: sem, via: 'vibe' };

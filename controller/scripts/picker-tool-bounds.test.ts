@@ -24,6 +24,7 @@ const calls: Call[] = [];
 let embedTextCalls = 0;
 let embeddingCalls = 0;
 let embeddingDim = 0;
+let embeddingDown = false;
 const pending = new Set<ServerResponse>();
 
 const song = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: `T ${id}`, artist: `Artist ${id}`, duration: 200, ...extra });
@@ -46,6 +47,7 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/v1/embeddings') {
     embeddingCalls++;
+    if (embeddingDown) { req.socket.destroy(); return; } // an unreachable provider
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
@@ -238,6 +240,19 @@ test('searchLibrary: a named track filtered out keeps saying so when the vibe in
   const vibe = await exec(buildPickerTools(ctxScope).tools.searchLibrary, { query: 'nothing literal matches' });
   assert.deepEqual(vibe, { tracks: vibe.tracks, via: 'vibe' });
   assert.deepEqual(vibe.tracks.map((s: any) => s.id), ['vibe1']);
+});
+
+test('searchLibrary: an unreachable embedding provider reads as no vibe matches, not a failed search', async () => {
+  embeddingDown = true;
+  try {
+    embeddingCalls = 0;
+    const out = await exec(buildPickerTools().tools.searchLibrary, { query: 'nothing literal matches' });
+    assert.ok(embeddingCalls >= 1, 'the vibe index was tried');
+    assert.equal(out.error, undefined, 'the literal search answered; the miss is not an error');
+    assert.ok(!Array.isArray(out) && typeof out.rule === 'string' && typeof out.note === 'string');
+  } finally {
+    embeddingDown = false;
+  }
 });
 
 test('empty discovery answers carry a note and the rule, never a bare []', async () => {

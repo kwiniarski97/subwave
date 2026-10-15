@@ -48,6 +48,7 @@ import { agenticDiscoverySelectionReason, agenticSelectionReason, agenticTrackRe
 import { runLeaningsReview } from './dj-agent/leanings-pass.js';
 import { guardIntro, screenAck, isNamedRequester } from '../util/request-guard.js';
 import { claimEarnsRepick, claimLookupQuery, misnamedRequestLines, plainRequestAck, plainRequestIntro, requestLookups, requestStandIn, type MisnamedLine } from '../util/request-claim.js';
+import { outsideOverride, outsideRequestsAllowed } from '../music/outside-request-policy.js';
 import * as likes from './likes.js';
 import { classifyPickFailure, SEED_NOT_A_PICK_CLAUSE, type PickFailure } from '../util/pick-seed.js';
 import { buildShortlist, journeyCompanions } from '../music/shortlist.js';
@@ -203,7 +204,8 @@ async function repickRequestFromSeen({ seen, badId, requester, text, persona, re
   }));
   try {
     const outcome: any = await djObject({
-      system: requestSystem(persona),
+      // An outside song among the candidates is a find, as on the first try.
+      system: requestSystem(persona, { outsideLibrary: [...seen.keys()].some(subsonic.isOutsideSongId) }),
       prompt: JSON.stringify({ candidates: [...seen.values()] }, null, 2)
         + `\n\n${isNamedRequester(requester) ? `Listener "${requester}" asked` : 'An unnamed listener asked'}: "${text}". ${reason ?? `The id you returned (${badId ?? 'none'}) matches none of the candidates above.`} Choose the best candidate id from the list for this request, and write "ack"${wantIntro ? ' and "intro"' : ''} to match.`,
       schema,
@@ -1790,8 +1792,9 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
 
     // A request runs with recency only — no show locks. An explicit listener
     // ask wins over the show's strict filters, which is why the scope stops
-    // here rather than being built from the active show.
-    const scope = pickerScope({ recentIds });
+    // here rather than being built from the active show. outsideLibrary is
+    // resolved once here so the prompt and searchOutsideLibrary agree.
+    const scope = pickerScope({ recentIds, outsideLibrary: outsideRequestsAllowed() });
     const run = await requestAgent.run({
       messages,
       scope,
@@ -1907,6 +1910,21 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
       throw new Error(`request agent returned unknown id ${object?.id}`);
     }
 
+    // Outside backstop: the run found the exact song outside the library and
+    // the model queued a stand-in anyway (a small model reads the frame's
+    // "closest thing" rule over the tool's own advice). Hold it to what it
+    // found. The model's ack and intro were written for the stand-in, so both
+    // are dropped below and the intro is rewritten for the song that airs. The
+    // gate is asked again because the hourly cap may have closed mid-run.
+    let replaced: any = null;
+    const outsideHit = outsideOverride(song, toolCalls, text);
+    if (outsideHit && extras.seen.has(outsideHit.id) && outsideRequestsAllowed()) {
+      replaced = song;
+      song = extras.seen.get(outsideHit.id);
+      logEvent('pick.outside-override', { agent: 'request', from: replaced.id, to: song.id });
+      queue.log('request', `agent picked "${replaced.title}" over the exact song found outside the library — queuing "${song.title}" instead`);
+    }
+
     // Claim guard (#1918): a REAL candidate id under lines that name another
     // artist or title — "Michael Jackson please" queued Madonna under a
     // "Billie Jean" intro. util/request-claim.ts decides what a wrong name is;
@@ -1924,7 +1942,8 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
       { ack: answer?.ack, intro: autoVoiceAllowed() ? answer?.intro : null },
       { track, requestText: text, requester, stationNames, others: [...pool.values()].filter((c: any) => c?.id !== track.id) },
     );
-    const firstMiss = misnamed(object, song, extras.seen);
+    // An outside override's lines are rewritten for it below, never checked.
+    const firstMiss = replaced ? [] : misnamed(object, song, extras.seen);
     if (firstMiss.length) {
       // An ack-only miss goes straight to the plain ack: no call, no lookup.
       const canRepick = !corrected && claimEarnsRepick(firstMiss);
@@ -1969,7 +1988,8 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
     // call means the corrective pick was already offered spaced candidates;
     // whatever it left stands, as spacing does on a failed re-pick.
     let spacingGuard: string | null = null;
-    if (neighbourRoots.size && standIn(song, extras.seen)) {
+    // An outside override IS the ask, so it is never spaced as a stand-in.
+    if (!replaced && neighbourRoots.size && standIn(song, extras.seen)) {
       if (!corrected) {
         const spaced = await runArtistGuard<any>({
           song, object, pickAnchor: null,
@@ -2040,9 +2060,11 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
     const modelIntro = typeof object.intro === 'string' ? object.intro.trim() : '';
     let rawIntro = '';
     if (autoVoiceAllowed()) {
-      rawIntro = !plainLines.has('intro') ? modelIntro
-        : plainRequestIntro(song, requester, requestSpeech.persona)
-          || String((await regenerateIntro().catch(() => null)) ?? '').trim();
+      rawIntro = replaced
+        ? String((await regenerateIntro().catch(() => null)) ?? '').trim()
+        : !plainLines.has('intro') ? modelIntro
+          : plainRequestIntro(song, requester, requestSpeech.persona)
+            || String((await regenerateIntro().catch(() => null)) ?? '').trim();
     }
     const guarded = await guardIntro(rawIntro || null, echoTexts, regenerateIntro);
     if (guarded.guard) queue.log('request-guard', `agent intro echoed request text — ${guarded.guard}`);
@@ -2053,7 +2075,7 @@ async function runRequestViaAgent(queue: any, { requester, text }: { requester: 
     // is never falsy and a downstream `||` is unreachable. Threading it in here
     // means the listener gets the named line in both cases the fallback covers
     // — the model wrote nothing, and the model echoed their own text back.
-    const screened = screenAck(plainLines.has('ack') ? plainRequestAck(song, requester) : object.ack, echoTexts, isNamedRequester(requester)
+    const screened = screenAck(replaced ? '' : plainLines.has('ack') ? plainRequestAck(song, requester) : object.ack, echoTexts, isNamedRequester(requester)
       ? `Coming up for you, ${requester}.`
       : 'Coming up for you.');
     if (screened.guard) queue.log('request-guard', `agent ack echoed request text — replaced`);

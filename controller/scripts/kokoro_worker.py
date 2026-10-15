@@ -14,15 +14,29 @@ Response: {"id": "<echoed>", "ok": true,  "path": "/path/to.wav", "duration_s": 
 When provided, the voice's audio/timbre is preserved but the phonemes are
 generated for the given language (e.g. a Japanese voice reading English text).
 When absent, the language is auto-detected from the voice code prefix character.
+
+Polish (`l` prefix, e.g. `lm_mateusz`) is not in stock Kokoro: it needs a Polish
+fine-tune of the model (KOKORO_PL_MODEL) next to a voices file that carries the
+Polish voicepack. Polish voices are synthesized with that model; every other
+voice keeps the stock one, because the Polish fine-tune turns the stock voices
+into different-sounding speakers. Without KOKORO_PL_MODEL a Polish voice falls
+back to the stock model: understandable, but with a heavy foreign accent.
+
+In Polish text, `{English words}` marks a span to pronounce with English rules
+(album titles, band names). The whole line is still one synthesis pass in one
+voice; only the phonemizer differs per span. Every other language drops the
+braces and keeps the words.
 """
 
 import json
 import os
+import re
 import sys
 import traceback
 from pathlib import Path
 
 MODEL = os.environ.get("KOKORO_MODEL", "/opt/kokoro/models/kokoro-v1.0.onnx")
+PL_MODEL = os.environ.get("KOKORO_PL_MODEL", "")
 VOICES = os.environ.get("KOKORO_VOICES", "/opt/kokoro/models/voices-v1.0.bin")
 DEFAULT_VOICE = os.environ.get("KOKORO_VOICE", "bm_george")
 DEFAULT_LANG = os.environ.get("KOKORO_LANG", "en-gb")
@@ -52,6 +66,53 @@ class JapaneseG2P:
         return annotated[: len(annotated) // 2], tokens
 
 
+# espeak-ng `pl` writes affricates as two symbols; Kokoro's vocabulary has
+# one-symbol forms (shared with zh/ja) and no bare ʑ. Folding them is what the
+# Polish fine-tune was trained on, and unfolded input roughly quintuples the
+# character error rate. Order matters: dʑ before ʑ.
+PL_FOLD = (("dʑ", "ʥ"), ("tɕ", "ʨ"), ("ʑ", "ʒ"), ("ts", "ʦ"), ("dz", "ʣ"))
+# English inside Polish text. espeak's English is what this image ships; it
+# recognised 89% of English title words in Polish sentences, against 74% when
+# the titles went through the Polish rules.
+PL_ENGLISH_LANG = "en-us"
+ENGLISH_SPAN_RE = re.compile(r"(\{[^{}\r\n]*\})")
+
+
+def strip_english_marks(text):
+    """`{x}` -> `x`: a language with no span support keeps the words."""
+    return text.replace("{", "").replace("}", "")
+
+
+class PolishG2P:
+    """espeak-ng `pl` + affricate fold, with `{...}` spans phonemized as English.
+
+    Spans are phonemized separately and joined with single spaces: espeak trims
+    the space at each fragment edge, so concatenating fragments as-is glues the
+    last Polish word to the first English one and loses most of the gain."""
+
+    def __init__(self, polish, english):
+        self.polish = polish
+        self.english = english
+
+    def _pl(self, text):
+        ps, _ = self.polish(text)
+        for a, b in PL_FOLD:
+            ps = ps.replace(a, b)
+        return ps
+
+    def __call__(self, text):
+        out = []
+        for part in ENGLISH_SPAN_RE.split(text):
+            if not part.strip():
+                continue
+            if part.startswith("{") and part.endswith("}"):
+                out.append(self.english(part[1:-1])[0].strip())
+            else:
+                out.append(self._pl(strip_english_marks(part)).strip())
+        ps = " ".join(p for p in out if p)
+        return re.sub(r"\s+", " ", ps).replace(" ,", ",").replace(" .", "."), None
+
+
 def build_g2p(lang, espeak, japanese, chinese):
     """Build the phonemizer that actually understands ``lang``.
 
@@ -66,7 +127,13 @@ def build_g2p(lang, espeak, japanese, chinese):
         return JapaneseG2P(japanese.JAG2P(version="pyopenjtalk"))
     if lang == "cmn":
         return chinese.ZHG2P()
+    if lang == "pl":
+        return PolishG2P(espeak.EspeakG2P(language="pl"), espeak.EspeakG2P(language=PL_ENGLISH_LANG))
     return espeak.EspeakG2P(language=lang)
+
+
+def is_polish_voice(voice):
+    return voice.startswith("l")
 
 
 def main():
@@ -86,6 +153,23 @@ def main():
     except Exception as e:
         emit({"id": None, "ok": False, "fatal": True, "error": f"model load failed: {e}"})
         sys.exit(1)
+
+    polish_kokoro = None  # loaded on the first Polish request: most stations never make one
+    polish_missing_logged = False
+
+    def model_for(voice):
+        nonlocal polish_kokoro, polish_missing_logged
+        if not is_polish_voice(voice):
+            return kokoro
+        if polish_kokoro is None and PL_MODEL and os.path.exists(PL_MODEL):
+            log(f"loading Polish model: {PL_MODEL}")
+            polish_kokoro = Kokoro(PL_MODEL, VOICES)
+        if polish_kokoro is not None:
+            return polish_kokoro
+        if not polish_missing_logged:
+            log(f"Polish voice {voice} without KOKORO_PL_MODEL ({PL_MODEL or 'unset'}): using the stock model")
+            polish_missing_logged = True
+        return kokoro
 
     log("ready")
     emit({"id": None, "ready": True})
@@ -108,6 +192,7 @@ def main():
         "p": "pt-br",
         "j": "ja",
         "z": "cmn",
+        "l": "pl",
     }
     # Pre-#1213 settings.json / KOKORO_LANG values that espeak-ng would reject.
     # Rewritten rather than dropped, so an operator who picked French before the
@@ -150,9 +235,12 @@ def main():
                 raise ValueError("missing 'out' path")
             Path(out).parent.mkdir(parents=True, exist_ok=True)
 
-            phonemes, _ = _phonemize(voice, lang)(text)
+            g2p = _phonemize(voice, lang)
+            if not isinstance(g2p, PolishG2P):
+                text = strip_english_marks(text)
+            phonemes, _ = g2p(text)
 
-            samples, sample_rate = kokoro.create(phonemes, voice=voice, speed=speed, is_phonemes=True)
+            samples, sample_rate = model_for(voice).create(phonemes, voice=voice, speed=speed, is_phonemes=True)
             sf.write(out, samples, sample_rate)
 
             duration = float(len(samples)) / float(sample_rate)

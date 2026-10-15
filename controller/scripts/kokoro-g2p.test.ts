@@ -44,9 +44,33 @@ phonemes, _ = japanese("仮名")
 assert phonemes == "kana"
 assert worker.build_g2p("cmn", Espeak, Japanese, Chinese).kind == "chinese"
 assert worker.build_g2p("en-gb", Espeak, Japanese, Chinese).kind == "espeak:en-gb"
+
+# Polish: espeak pl + affricate fold, {English} spans through espeak English,
+# fragments joined with single spaces (espeak trims fragment edges, so a plain
+# concatenation would glue the last Polish word to the first English one).
+class FakeEspeak:
+    class EspeakG2P:
+        def __init__(self, language):
+            self.language = language
+
+        def __call__(self, text):
+            if self.language == "pl":
+                return " " + text.lower().replace("c", "ts").replace("ź", "ʑ") + " ", None
+            return " EN(" + text + ") ", None
+
+polish = worker.build_g2p("pl", FakeEspeak, Japanese, Chinese)
+assert isinstance(polish, worker.PolishG2P)
+assert polish.english.language == worker.PL_ENGLISH_LANG
+ps, _ = polish("Teraz {Pink Floyd} i źródło {OK Computer}.")
+assert ps == "teraz EN(Pink Floyd) i ʒródło EN(OK Computer).", ps
+assert polish("Cała {Moon}")[0] == "ʦała EN(Moon)", "ts folds to the one-symbol affricate"
+assert polish("bez nawiasów")[0] == "bez nawiasów"
+assert polish("jeden { dwa")[0] == "jeden dwa", "an unmatched brace is dropped, not phonemized"
+assert worker.strip_english_marks("Next {Miles Davis}.") == "Next Miles Davis."
+assert worker.is_polish_voice("lm_mateusz") and not worker.is_polish_voice("bm_george")
 `;
 
 const out = spawnSync('python3', ['-c', probe, worker], { encoding: 'utf8' });
 assert.equal(out.status, 0, out.stderr || out.stdout);
 
-console.log('kokoro-g2p: native CJK dispatch passed');
+console.log('kokoro-g2p: native CJK and Polish dispatch passed');

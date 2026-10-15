@@ -1,6 +1,9 @@
 // Expressive engines render square-bracket directions; fallback engines speak
 // them literally. Keep the primary text untouched and sanitize only its rescue.
+// Kokoro's `{English}` span marks (speech-text.ts) are the same story: a rescue
+// engine would at best ignore them and at worst read them out.
 export function fallbackTextFor(requested: string, cloudCueFamily: string | null, text: string): string {
+  if (requested === 'kokoro' && text) return text.replace(/[{}]/g, '');
   const expressiveRequest = requested === 'chatterbox'
     || requested === 'gemini'
     || cloudCueFamily === 'fish-s21'

@@ -14,6 +14,7 @@ const SHORTCUTS: readonly Shortcut[] = [
   { keys: ['↑'], label: 'Volume up' },
   { keys: ['↓'], label: 'Volume down' },
   { keys: ['M'], label: 'Mute / unmute' },
+  { keys: ['L'], label: 'Show / hide lyrics' },
   { keys: ['1'], label: 'Open Timeline' },
   { keys: ['2'], label: 'Open Booth feed' },
   { keys: ['3', 'R'], label: 'Make a request' },

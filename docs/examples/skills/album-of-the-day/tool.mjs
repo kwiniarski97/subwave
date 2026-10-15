@@ -17,6 +17,11 @@ export const configFields = {
 const DEFAULTS = { maxAlbumMinutes: 110, minTracks: 5, noRepeatDays: 90, recentPlayHours: 24, shortlist: 8 };
 const DRAW = 20;
 
+// The whole preparation must finish inside the controller's 30 s budget, and
+// research is optional, so a slow search provider gives up here rather than
+// failing the airing's album with it. Exported so a test can shorten it.
+export const timing = { researchMs: 6000 };
+
 // A field left blank arrives as '' (or not at all), and Number('') is 0, so a
 // blank would silently mean "no limit". Blank means the default.
 function setting(config, key) {
@@ -29,15 +34,18 @@ function setting(config, key) {
 const byAlbumOrder = (a, b) => ((Number(a.discNumber) || 1) - (Number(b.discNumber) || 1))
 	|| ((Number(a.track) || Number.MAX_SAFE_INTEGER) - (Number(b.track) || Number.MAX_SAFE_INTEGER));
 
-async function shortlistFrom(services, drawn, limits, featured, played) {
+async function shortlistFrom(services, drawn, limits, featured, played, ctx) {
 	const passing = drawn.filter(a => a.songCount >= limits.minTracks
 		&& a.duration > 0 && a.duration <= limits.maxAlbumMinutes * 60
 		&& !a.isCompilation && !featured.has(a.id));
-	// The recent-play check needs each album's songs, so it only runs on as
-	// many albums as the shortlist can use.
+	// These checks need each album's songs, so they only run on as many albums
+	// as the shortlist can use. albumPlayable applies the show's own rules
+	// (blocklist, strict locks, playlists, length limits), so the controller
+	// never refuses the album this skill hands it.
 	const checked = await Promise.all(passing.slice(0, limits.shortlist).map(async a => {
-		if (!played.size) return a;
 		try {
+			if (!(await services.library.albumPlayable(a.id, { at: ctx?.at }))) return null;
+			if (!played.size) return a;
 			const songs = await services.library.getAlbum(a.id);
 			return songs.some(s => played.has(s.id)) ? null : a;
 		} catch {
@@ -61,7 +69,7 @@ async function filteredPick(services, limits, ctx) {
 	const featured = await services.featured.recentAlbumIds(limits.noRepeatDays);
 	const played = limits.recentPlayHours > 0 ? services.recentPlays(limits.recentPlayHours).ids : new Set();
 	for (let page = 0; page < 2; page++) {
-		const shortlist = await shortlistFrom(services, await services.library.randomAlbums({ count: DRAW }), limits, featured, played);
+		const shortlist = await shortlistFrom(services, await services.library.randomAlbums({ count: DRAW }), limits, featured, played, ctx);
 		if (shortlist.length) return chooseOne(services, shortlist, ctx);
 	}
 	return null;
@@ -80,6 +88,12 @@ async function research(services, album) {
 		// The album still airs without research. The DJ sticks to library facts.
 		return [];
 	}
+}
+
+function withinBudget(work, ms, fallback) {
+	let timer;
+	const late = new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); });
+	return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
 export default async function prepareAlbumOfTheDay(ctx, state, services, config, input) {
@@ -106,7 +120,7 @@ export default async function prepareAlbumOfTheDay(ctx, state, services, config,
 		data: {
 			album: { name: album.name, artist: album.artist, year: album.year, genre: album.genre },
 			tracklist: songs.slice(0, 60).map((song, i) => ({ position: i + 1, title: String(song.title || '').slice(0, 160), durationSec: Number(song.duration) || null })),
-			research: await research(services, album),
+			research: await withinBudget(research(services, album), timing.researchMs, []),
 		},
 		music: { type: 'album', albumId: album.id },
 	};

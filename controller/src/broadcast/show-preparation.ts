@@ -223,14 +223,15 @@ export const showPreparation = createShowPreparation({
     return data;
   },
   source: async (result, snap, context) => {
-    if (!result.music) return null;
+    if (!result.music || result.music.type !== 'artist') return null;
+    const { artistId } = result.music;
     const at = typeof context.at === 'string' ? new Date(context.at) : new Date();
     const show = settings.resolveActiveShow(at);
     if (!show) throw new Error('The prepared show has ended');
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        resolveArtistEpisodeSource(result.music.artistId, show, `${snap.occurrence.id}:${result.music.artistId}`),
+        resolveArtistEpisodeSource(artistId, show, `${snap.occurrence.id}:${artistId}`),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Artist catalogue lookup timed out')), 12_000); }),
       ]);
     } finally { clearTimeout(timer); }

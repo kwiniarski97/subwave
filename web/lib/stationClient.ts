@@ -9,6 +9,7 @@ import {
   useStationOrigin,
   type StationOrigin,
 } from '@/lib/stationOrigin';
+import { getStationAuthToken } from '@/lib/stationAuth';
 import type { Theme } from '@/lib/theme';
 import type {
   NowPlayingResponse,
@@ -56,6 +57,18 @@ export interface LikeStatus {
   count?: number;
 }
 
+/** One lyric line; `t` is ms from the moment the track became audible (null
+ *  when the lyrics are unsynced). */
+export interface LyricLine {
+  t: number | null;
+  text: string;
+}
+
+export interface LyricsPayload {
+  synced: boolean;
+  lines: LyricLine[];
+}
+
 export interface StationClient {
   origin: StationOrigin;
   /** Prefix a controller-relative path with the station's API base.
@@ -77,6 +90,9 @@ export interface StationClient {
   likeCurrent(songId: string): Promise<LikeResult | null>;
   /** null on network error. */
   likeStatus(): Promise<LikeStatus | null>;
+  /** Lyrics for one track. null on any failure, including an older controller
+   *  without the route; an empty `lines` means the track has none. */
+  lyrics(subsonicId: string, init?: { signal?: AbortSignal }): Promise<LyricsPayload | null>;
   /** Best-effort: never throws, never blocks. */
   beacon(payload: BeaconPayload): void;
   /** null on any failure; callers treat that as "configured" and stay put. */
@@ -138,6 +154,21 @@ export function createStationClient(origin: StationOrigin): StationClient {
       try {
         const r = await fetch(`${api}/like`);
         return await json<LikeStatus>(r);
+      } catch {
+        return null;
+      }
+    },
+    lyrics: async (subsonicId, init) => {
+      try {
+        // Gated on the station password on a private station, like other
+        // listener-facing library reads.
+        const token = getStationAuthToken();
+        const r = await fetch(`${api}/lyrics/${encodeURIComponent(subsonicId)}`, {
+          signal: init?.signal,
+          headers: token ? { 'x-station-auth': token } : undefined,
+        });
+        if (!r.ok) return null;
+        return await json<LyricsPayload>(r);
       } catch {
         return null;
       }

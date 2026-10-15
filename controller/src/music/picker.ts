@@ -1,5 +1,5 @@
 import { prepareEpisodeContext, showPreparation } from '../broadcast/show-preparation.js';
-import type { ArtistEpisodeSource } from './episode-source.js';
+import type { EpisodeSource } from './episode-source.js';
 // The "pool path": build a balanced candidate pool from the Subsonic and
 // library sources in buildCandidates(), one LLM call to pick one. Fallback for the session DJ agent.
 
@@ -234,7 +234,7 @@ async function tracksFromAlbums(albums: { id: string }[], perAlbum: number, max:
   return out;
 }
 
-async function buildCandidates(mood: string | null | undefined, recentIds: Set<string>, recentKeys: Set<string>, recentArtistRoots: Set<string>, recentAlbums: Set<string>, currentTrack: Candidate | null, rankTarget: { bpm: number | null; key: string | null } | null = null, audioWaypoint: number[] | null = null, showFilter: ShowFilter = null, hardRecentIds: Set<string> = new Set(), hardRecentKeys: Set<string> = new Set(), playlistPool: PlaylistPool | null = null, playlistStrict = false, blockedArtists: Set<string> = new Set(), strictGenreResolution: StrictGenreResolution = { genres: [], warnings: [] }, lengthLimits: { minTrackSec: number | null; maxTrackSec: number | null } = { minTrackSec: null, maxTrackSec: null }, exhaustiveRotation = false, excludedIds: Set<string> | null = null, episodeSource: ArtistEpisodeSource | null = null, hasPlaylistAnchor = false) {
+async function buildCandidates(mood: string | null | undefined, recentIds: Set<string>, recentKeys: Set<string>, recentArtistRoots: Set<string>, recentAlbums: Set<string>, currentTrack: Candidate | null, rankTarget: { bpm: number | null; key: string | null } | null = null, audioWaypoint: number[] | null = null, showFilter: ShowFilter = null, hardRecentIds: Set<string> = new Set(), hardRecentKeys: Set<string> = new Set(), playlistPool: PlaylistPool | null = null, playlistStrict = false, blockedArtists: Set<string> = new Set(), strictGenreResolution: StrictGenreResolution = { genres: [], warnings: [] }, lengthLimits: { minTrackSec: number | null; maxTrackSec: number | null } = { minTrackSec: null, maxTrackSec: null }, exhaustiveRotation = false, excludedIds: Set<string> | null = null, episodeSource: EpisodeSource | null = null, hasPlaylistAnchor = false) {
   await library.load();
   const { minTrackSec, maxTrackSec } = lengthLimits;
   // Prohibited rows must not consume a source's finite sampling slots.

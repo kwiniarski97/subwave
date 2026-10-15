@@ -409,6 +409,17 @@ export function stripSpeakerLabel(text: string, castNames: Iterable<string>): st
   return rest.trim() ? rest : text;
 }
 
+// `{Pink Floyd}` marks an English span inside Polish text: the Kokoro worker
+// phonemizes it with English rules (see kokoro_worker.py). Only Kokoro reads the
+// marks, so every other engine and every reader gets the words without them.
+// Display text KEEPS them — it is also what speak() receives — and the public
+// session feed strips them on the way out.
+const ENGLISH_SPAN_MARK_RE = /[{}]/g;
+
+export function stripEnglishSpanMarks(text: string): string {
+  return text ? text.replace(ENGLISH_SPAN_MARK_RE, '') : text;
+}
+
 export function normalizeForDisplay(text: string): string {
   if (!text) return text;
   return collapseSpace(stripMarkup(text, { forDisplay: true }));
@@ -422,6 +433,7 @@ export function normalizeForSpeech(
 ): string {
   if (!text) return text;
   let t = stripMarkup(text, { engine });
+  if (engine !== 'kokoro') t = stripEnglishSpanMarks(t);
 
   // Keep literal bracket content in the reader-facing form, but remove the
   // cue-shaped delimiters before TTS so an expressive engine cannot interpret

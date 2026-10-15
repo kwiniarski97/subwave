@@ -707,8 +707,9 @@ export const FESTIVAL_DEFAULTS = [
   { month: 12, day: 31, name: "New Year's Eve", mood: 'celebratory' },
 ];
 
-// The 54 official Kokoro voices from kokoro-onnx v1.0. Any voice matching
-// KOKORO_VOICE_RE passes validation.
+// The 54 official Kokoro voices from kokoro-onnx v1.0, plus `lm_mateusz` (Polish),
+// which only speaks when KOKORO_VOICES points at a voices file that carries it
+// (see docs/custom-tts.md). Any voice matching KOKORO_VOICE_RE passes validation.
 export const KOKORO_VOICES = [
   'af_alloy', 'af_aoede', 'af_bella', 'af_heart', 'af_jessica', 'af_kore',
   'af_nicole', 'af_nova', 'af_river', 'af_sarah', 'af_sky',
@@ -724,6 +725,7 @@ export const KOKORO_VOICES = [
   'pf_dora', 'pm_alex', 'pm_santa',
   'zf_xiaobei', 'zf_xiaoni', 'zf_xiaoxiao', 'zf_xiaoyi',
   'zm_yunjian', 'zm_yunxi', 'zm_yunxia', 'zm_yunyang',
+  'lm_mateusz',
 ];
 
 export const KOKORO_VOICE_LANGUAGES: Record<string, string> = {
@@ -736,6 +738,7 @@ export const KOKORO_VOICE_LANGUAGES: Record<string, string> = {
   'j': 'Japanese',
   'p': 'Portuguese (Brazilian)',
   'z': 'Mandarin Chinese',
+  'l': 'Polish',
 };
 
 export const KOKORO_VOICE_RE = TTS_KOKORO_VOICE_RE;
@@ -744,7 +747,7 @@ export const KOKORO_VOICE_RE = TTS_KOKORO_VOICE_RE;
 // voice-code prefix. Synced with kokoro_worker.py's prefix->lang mapping.
 // Every entry must EXACTLY match a row in `espeak-ng --voices` — EspeakBackend
 // validates verbatim and throws otherwise, so `fr-fr`, never `fr` (#1213).
-export const KOKORO_LANGS = ['en-gb', 'en-us', 'es', 'it', 'fr-fr', 'hi', 'pt-br', 'ja', 'cmn'];
+export const KOKORO_LANGS = ['en-gb', 'en-us', 'es', 'it', 'fr-fr', 'hi', 'pt-br', 'ja', 'cmn', 'pl'];
 export const KOKORO_LANG_RE = new RegExp(`^(${KOKORO_LANGS.join('|')})$`);
 
 // Codes offered before they were checked against espeak-ng, kept accepted so a
@@ -756,6 +759,21 @@ export const KOKORO_LANG_ALIASES: Record<string, string> = { fr: 'fr-fr' };
  *  the caller's own validation to reject. */
 export function canonicalKokoroLang(lang: string): string {
   return KOKORO_LANG_ALIASES[lang] || lang;
+}
+
+// Voice-code prefix -> phonemizer language: kokoro_worker.py's `lang_mapping`,
+// pinned equal to it by scripts/kokoro-lang.test.ts.
+export const KOKORO_PREFIX_LANGS: Readonly<Record<string, string>> = {
+  a: 'en-us', b: 'en-gb', e: 'es', i: 'it', f: 'fr-fr', h: 'hi', p: 'pt-br', j: 'ja', z: 'cmn', l: 'pl',
+};
+
+/** The phonemizer language the worker will use for `voice`, given the station's
+ *  `tts.kokoro.lang` override. Same rule as the worker's `_phonemize`: a known
+ *  override wins, anything else falls to the voice prefix, then British English. */
+export function kokoroPhonemizerLang(voice: string | undefined, lang: string | undefined): string {
+  const override = canonicalKokoroLang(String(lang || '').trim());
+  if (KOKORO_LANGS.includes(override)) return override;
+  return KOKORO_PREFIX_LANGS[String(voice || '')[0] || ''] || 'en-gb';
 }
 
 // PocketTTS built-in voices. `tts.voice` for pocket-tts may be one of these (or

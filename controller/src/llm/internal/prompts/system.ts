@@ -7,6 +7,7 @@ import { resolvePersonaVoiceSlot } from '../../../audio/persona-engine.js';
 import { resolveCloudModelForPersona, resolveCloudProviderForPersona } from '../speech/cloud-speech.js';
 import { cloudExpressionCueFamily } from '../core/pure.js';
 import { onAirLocationGrounding } from './grounding.js';
+import { kokoroPhonemizerLang } from '../../../settings/vocab.js';
 
 // Paralinguistic tags Chatterbox renders as actual non-verbal sounds. Every
 // other engine (piper, kokoro, cloud) reads `[laugh]` aloud as the word
@@ -34,6 +35,24 @@ const ELEVENLABS_V3_TAG_HINT =
 // it does not alter the base prompt or let brackets leak into fallback engines.
 const FISH_S21_TAG_HINT =
   '\n\nYou may sparingly add a short natural-language delivery cue in square brackets, such as [laughing nervously], [whispers], or [soft and warm]. Use at most two when they genuinely improve delivery. A cue describes only the voice, never music, a track, a fade, a pause, a transition, a timing note or a scene. Every cue must immediately precede spoken words; never stack cues, add a closing tag, or end a segment with one.';
+
+// A Polish Kokoro voice reads English titles with Polish letter sounds unless
+// they are marked: the worker phonemizes `{...}` spans as English (89% of English
+// title words recognised vs 74% unmarked). Gated on the RESOLVED Kokoro voice
+// and language, so no other engine ever sees braces asked for; any that slip
+// through are stripped before every other engine and every reader.
+const KOKORO_POLISH_ENGLISH_HINT =
+  '\n\nYour lines are voiced by a Polish speech engine. Wrap every English name or phrase in curly braces so it is pronounced in English: song and album titles, band and artist names, English quotes. Example: "Teraz {Pink Floyd} i utwór {Wish You Were Here}." Keep Polish words and Polish names outside the braces and never nest braces. Do not add Polish case endings to an English name; phrase the sentence so the name stays in its base form ("nowy album zespołu {Radiohead}").';
+
+/** True when `persona` will be voiced by Kokoro reading Polish. */
+function speaksKokoroPolish(
+  slot: { engine?: string; voice?: string } | null | undefined,
+  tts: { kokoro?: { voice?: string; lang?: string } } | null | undefined,
+): boolean {
+  if (slot?.engine !== 'kokoro') return false;
+  const voice = slot.voice || tts?.kokoro?.voice;
+  return kokoroPhonemizerLang(voice, tts?.kokoro?.lang) === 'pl';
+}
 
 // `persona` overrides the on-air persona — used by the persona-handoff
 // generators (generateSignoff / generateHandoffGreeting) to render the sign-off
@@ -64,8 +83,10 @@ export function djSystem(
   // own, so asking the slot directly reads "pinned to something that is not
   // chatterbox" and drops the hint on a station whose default IS chatterbox —
   // the same miss resolvePersonaVoiceSlot() exists to close in cloud-speech.ts.
-  const engine = resolvePersonaVoiceSlot(persona?.tts, s.tts)?.engine;
+  const slot = resolvePersonaVoiceSlot(persona?.tts, s.tts);
+  const engine = slot?.engine;
   if (engine === 'chatterbox') return base + CHATTERBOX_TAG_HINT;
+  if (speaksKokoroPolish(slot, s.tts)) return base + KOKORO_POLISH_ENGLISH_HINT;
   // Provider/model resolution is non-empty only when the persona actually
   // resolves to a configured cloud engine — including via the station default
   // when the persona sets no engine. That fail-closed check keeps cues away

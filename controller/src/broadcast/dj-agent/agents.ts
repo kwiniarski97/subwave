@@ -7,6 +7,7 @@ import { defineAgent } from '../../llm/agent.js';
 import { buildPickerTools, type PickerScope } from '../../llm/tools.js';
 import { agenticDiscoverySchema, pickSystem, requestSchema, requestSystem } from './schemas.js';
 import { agentDeadline } from './breaker.js';
+import { outsideRequestsAllowed } from '../../music/outside-request-policy.js';
 import type { Persona } from '../queue/types.js';
 
 // What pickViaSelectionRoute hands the picker each run. `scope` is the whole constraint
@@ -73,12 +74,14 @@ export const requestAgent = defineAgent<RequestRunArgs, PickerExtras>({
   timeoutMs: agentDeadline,
   buildSystem: ({ persona }) => requestSystem(persona),
   // resolveReferences adds the web-backed reference resolver (request path only;
-  // no-op without a search provider) behind settings.llm.requestWebResolve.
+  // no-op without a search provider) behind settings.llm.requestWebResolve;
+  // outsideLibrary adds searchOutsideLibrary when outside requests are allowed.
   // Set here rather than at the call site: it is a property of THIS agent.
   buildTools: ({ scope }) => {
     const { tools, seen } = buildPickerTools({
       ...scope,
       resolveReferences: settings.get().llm?.requestWebResolve ?? false,
+      outsideLibrary: outsideRequestsAllowed(),
     });
     return { tools, extras: { seen } };
   },

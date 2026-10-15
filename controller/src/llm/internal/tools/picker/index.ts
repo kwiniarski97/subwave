@@ -29,6 +29,7 @@ import showPoolTracks from './tools/show-pool-tracks.js';
 import episodeArtistTracks from './tools/episode-artist-tracks.js';
 import tracksTowardJourney from './tools/tracks-toward-journey.js';
 import identifyRequestedTrack from './tools/identify-requested-track.js';
+import searchOutsideLibrary from './tools/search-outside-library.js';
 import songsByEra from './tools/songs-by-era.js';
 import sonicSimilarTracks from './tools/sonic-similar-tracks.js';
 
@@ -61,6 +62,7 @@ export const PICKER_TOOLS: readonly PickerToolModule[] = [
   episodeArtistTracks,
   tracksTowardJourney,
   identifyRequestedTrack,
+  searchOutsideLibrary,
   songsByEra,
   sonicSimilarTracks,
   frequentAlbums,
@@ -68,6 +70,13 @@ export const PICKER_TOOLS: readonly PickerToolModule[] = [
   similarArtistTracks,
   moodWildcard,
 ];
+
+// Tools only the listener-request agent is offered (each gated on a request-only
+// scope field). Surfaces that list the per-track discovery tools leave these out.
+export const REQUEST_ONLY_PICKER_TOOLS: ReadonlySet<string> = new Set([
+  identifyRequestedTrack.name,
+  searchOutsideLibrary.name,
+]);
 
 export { pickerScope };
 export type { PickerScope, PickerContext } from './scope.js';

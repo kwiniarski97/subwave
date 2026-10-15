@@ -90,6 +90,10 @@ export interface PickerScope {
   // the model worded its query. Data: it picks library rows and reaches no
   // prompt or tool answer. null on every pick path.
   requestText: string | null;
+  // Request path only: registers searchOutsideLibrary, which offers songs
+  // octo-fiesta can fetch that the library does not hold. Set from
+  // music/outside-request-policy.ts at run start; never on the per-track picker.
+  outsideLibrary: boolean;
 }
 
 // Every field defaults to "no constraint". Spread over a partial so there is
@@ -119,6 +123,7 @@ const NO_SCOPE: PickerScope = {
   audioWaypoint: null,
   resolveReferences: false,
   requestText: null,
+  outsideLibrary: false,
 };
 
 export function pickerScope(partial: Partial<PickerScope> = {}): PickerScope {

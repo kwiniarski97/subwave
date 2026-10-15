@@ -42,6 +42,7 @@ Copy-ready examples live in [`docs/examples/skills`](./examples/skills) —
 copy a folder into `state/skills/` and hit **Rescan** in the admin Skills page:
 
 - [`random-artist-pick`](./examples/skills/random-artist-pick) prepares an artist spotlight show. Select it as the show's **Episode preparation skill**.
+- [`album-of-the-day`](./examples/skills/album-of-the-day) prepares a show that plays one library album in album order, with a fact or piece of trivia between every song. It ships a host persona recipe (`persona.md`). Select it as the show's **Episode preparation skill**.
 - [`moon-phase`](./examples/skills/moon-phase) — the small end. No settings, no
   network, no memory: it works out the lunar phase from the date and returns it.
 - [`sunset`](./examples/skills/sunset) — the other end. Operator settings
@@ -445,16 +446,20 @@ identical footing. It's read-mostly (no settings writes, no secrets):
 | `services.searchReady()` | `true` when a search provider is usable |
 | `services.nowPlaying()` | the track on air — `{ artist, title, album, year, id }` or `null` |
 | `services.recentPlays(hours)` | play-log dedup sets `{ ids, keys }` over the last *hours* |
-| `services.library.getArtist(id)` / `.getAlbum(id)` / `.searchArtists(name, opts?)` | Navidrome/Subsonic reads |
+| `services.library.getArtist(id)` / `.getAlbum(id)` / `.searchArtists(name, opts?)` / `.randomArtist(opts?)` / `.randomAlbums({ count })` | Navidrome/Subsonic reads. `randomAlbums` returns `{ id, name, artist, year, genre, songCount, duration, isCompilation }` (duration in seconds) |
 | `services.onThisDay()` | Wikipedia "on this day" events for today |
 | `services.fetchHeadlines({ feedUrl?, maxItems? })` | fetch + parse an RSS/Atom/RDF feed (what `feed:` uses) |
 | `services.recall.seen(key)` / `.remember(key)` | durable, cross-restart dedup ledger |
+| `services.featured.recentAlbumIds(days)` | a `Set` of album ids that album-of-the-day airings featured in the last *days* |
+| `services.choose({ prompt, options })` | one bounded model call that picks among `options` (strings). Returns the index, or `null` when the model is unavailable, over budget, slow (15 s) or wrong. Never throws |
 | `services.log(msg)` | append a line to the station event log |
 
 Every skill's `tool.mjs` is **timeout-guarded (8 s)** and any throw degrades
 cleanly to "no data" — a slow or broken skill can never hang the between-track
 tick. This applies to the seeded built-ins too (their network calls — search,
-RSS, on-this-day — must finish within 8 s or that tick simply yields no segment).
+RSS, on-this-day — must finish within 8 s or that tick simply yields no segment). A show's
+**preparation** tool gets 30 s instead, because it runs once per airing and may
+call `services.choose`.
 With no `tool.mjs`, the skill is pure generation: the DJ writes from the brief
 alone.
 
@@ -677,7 +682,9 @@ Return this shape for a successful preparation:
 `subject` is required and limited to 160 characters. `data` is JSON, limited to
 32 KB. The DJ receives at most 6,000 characters of that data. `music` is optional;
 without it, the prepared subject affects speech while normal music selection
-continues. Unsupported music types and missing artist IDs are refused.
+continues. `music` is either `{ type: 'artist', artistId }` or
+`{ type: 'album', albumId }` (see [Album of the day](#prepare-an-album-of-the-day-show)).
+Unsupported music types and missing IDs are refused.
 
 Return `{ available: false, reason: '...' }` when no subject is available. Tool
 errors and invalid output leave ordinary broadcasting available. Automatic tool
@@ -709,3 +716,45 @@ tries up to five artists from Navidrome's artist index. Research is optional in
 the example: no search results means the DJ must stick to supplied library facts.
 Existing custom tools that return arbitrary data need this result envelope to
 serve as preparation skills.
+
+## Prepare an album of the day show
+
+An album result plays one library album, start to finish, in album order (disc,
+then track), with a DJ link between every song. When the album has finished,
+the rest of the slot is the show's ordinary programming.
+
+1. Copy [`album-of-the-day`](./examples/skills/album-of-the-day) into
+   `state/skills/album-of-the-day/`.
+2. Open **Admin → Skills**, click **Rescan**, and enable the skill. Its edit
+   sheet has five settings: the longest album (110 minutes), the fewest tracks
+   (5), the days before an album may return (90), the hours a recently played
+   song keeps its album off (24), and how many albums the model chooses among (8).
+3. Create the host from `persona.md` in **Admin → Personas**, or allow
+   `album-of-the-day` in an existing host's skills list.
+4. Schedule a show long enough for most albums (two hours covers nearly all of
+   them), pick that host, and select **Album of the day preparation** as its
+   **Episode preparation skill**.
+
+How it behaves:
+
+- **Choosing.** The skill draws random albums from Navidrome. It drops
+  compilations, albums that are too short or too long, albums featured within
+  the repeat window, and albums with a recently played song. The station's model
+  then chooses among the rest, or a random one is taken if the model is
+  unavailable. If nothing survives two draws, any random album is taken, so the
+  show always has a record.
+- **Order.** Songs air in album order, one per pick, and never shuffled. Songs the
+  show's rules exclude (the blocklist, excluded playlists, length limits,
+  strict locks) are skipped, never substituted. A listener request still plays
+  in between.
+- **Talking.** Every seam during the album gets a link, whatever the host's
+  frequency, as long as links can air at all. A muted station, the soft token
+  budget and a show handover still keep it quiet.
+- **Finishing.** When the last song has been queued, the restriction lifts: the
+  pickers, the fallback playlist and the show's own **Play in order** playlist
+  (if it has one) all resume. The DJ is told once that the album has finished.
+- **Running long.** The album does not delay the next show. At the show boundary
+  the next show starts, and with **Fade at show end** the playing song fades.
+- **Restarts.** The album's position is saved per airing in
+  `state/album-cursors.json`, so a controller restart resumes at the next song.
+  Featured albums are kept in `state/featured-albums.json` (the newest 512).

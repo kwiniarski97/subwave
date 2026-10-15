@@ -6,7 +6,13 @@ export const preparationResultSchema = z.discriminatedUnion('available', [
     available: z.literal(true),
     subject: z.string().trim().min(1).max(160),
     data: z.json().default(null).refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength <= 32768, 'preparation data must be at most 32 KB'),
-    music: z.object({ type: z.literal('artist'), artistId: z.string().trim().min(1).max(256) }).optional(),
+    // What the episode's automatic music is restricted to. An artist restricts
+    // selection to that catalogue; an album is walked in its own running order
+    // (music/album-walk.ts) and releases the show once it has finished.
+    music: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('artist'), artistId: z.string().trim().min(1).max(256) }),
+      z.object({ type: z.literal('album'), albumId: z.string().trim().min(1).max(256) }),
+    ]).optional(),
   }),
 ]);
 

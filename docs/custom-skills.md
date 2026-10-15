@@ -55,6 +55,15 @@ copy a folder into `state/skills/` and hit **Rescan** in the admin Skills page:
   controller, so any key you add there reaches `process.env` — then set the
   filter in the edit sheet. Each task is burned on read for the rest of the day,
   so it nudges rather than nags.
+- [`outside-the-crate`](./examples/skills/outside-the-crate) — a skill that
+  **queues music**. Every few hours it finds a song by the on-air artist (or a
+  related one the DJ names) that your library does not hold, queues it through
+  an [octo-fiesta](https://github.com/V1ck3s/octo-fiesta) proxy, and the DJ
+  trails it as a guest record. It queues by calling the same admin route MCP's
+  `subwave_queue_track` uses (`POST /dj/queue-track`). Set `OCTO_FIESTA_URL`
+  (plus `OCTO_FIESTA_USER`/`OCTO_FIESTA_PASS`, a Navidrome login, unless
+  `NAVIDROME_USER`/`NAVIDROME_PASS` are already in the root `.env`): the same
+  URL is what lets the controller stream those `ext-` songs at all.
 
 ## SKILL.md
 

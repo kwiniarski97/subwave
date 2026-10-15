@@ -41,7 +41,9 @@ import {
 } from './dj-agent/breaker.js';
 import { dropEchoedLink, enqueuePick, generatePickLink, trackFields, trimLinkToIntro } from './dj-agent/enqueue.js';
 import { advanceRun, notePickShow, runActive } from './dj-agent/runs.js';
-import { prepareEpisodeContext, showPreparation } from './show-preparation.js';
+import { prepareEpisodeContext, showPreparation, notifyPreparationChanged } from './show-preparation.js';
+import { albumLinkDue } from './album-episode-policy.js';
+import { albumWalker, type AlbumNext } from '../music/album-walk-next.js';
 import { prepareShortlistSearches } from './shortlist-search-preparation.js';
 import { pickSchemaBase, pickSystem, requestSystem, resolveEditorialLeanings, transitionChoiceNudge, type EditorialLeaningsContext } from './dj-agent/schemas.js';
 import { agenticDiscoverySelectionReason, agenticSelectionReason, agenticTrackRef, plainAgenticSelectionReason, resolveAgenticLeaningsUsage, verifiedAgenticReason, type AgenticPickResolution } from './dj-agent/leanings-review.js';
@@ -1432,11 +1434,73 @@ async function enqueueSelected(
   return 'queued';
 }
 
+// Album of the day (music/album-walk.ts): a prepared album airs in its own
+// running order, one track per pick. There is no model call for the choice,
+// and a link on every seam (album-episode-policy.ts). It outranks the show's
+// own playlistInOrder because preparation is per airing.
+// `picked: false` hands the pick to today's paths in three cases: no album
+// prepared, the walk could not answer, or the album has finished (which the
+// first time carries the one-time note for the event turn).
+// Applied and not applied are the same as for the playlist walk below: the
+// operator-chosen order wins over spacing and cooldowns, while the blocklist,
+// the show's filters (applied when the source was built) and push()'s
+// duplicate guard still hold.
+async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pickAnchor, showAt, eventText }: {
+  wantLink: boolean; linkEligible: boolean; cheap: boolean; pickAnchor?: any; showAt: Date | null; eventText: string;
+}): Promise<{ picked: boolean; note?: string }> {
+  ctx = await prepareEpisodeContext(ctx);
+  const prepared = showPreparation.preparedAlbum({ context: ctx });
+  if (!prepared) return { picked: false };
+  const { album: source, occurrence } = prepared;
+  const { album } = source;
+  let next: AlbumNext;
+  try {
+    next = await albumWalker.next(occurrence.showId, occurrence.id, source, queue.queuedIds());
+  } catch (err) {
+    queue.log('error', `album walk for "${album.name}" failed: ${(err as Error).message} — picking normally`);
+    return { picked: false };
+  }
+  if (next.kind === 'finished') {
+    let first = false;
+    try {
+      first = await albumWalker.finish(occurrence.showId, next.sig, source.tracks.length);
+    } catch (err) {
+      queue.log('error', `album finish for "${album.name}" not saved: ${(err as Error).message}`);
+    }
+    if (!first) return { picked: false };
+    queue.log('picker', `album "${album.name}" by ${album.artist} has finished — the rest of the show picks normally`);
+    // The restriction lifted without any preparation record changing; tell
+    // auto.m3u, which otherwise keeps coasting on the album.
+    notifyPreparationChanged();
+    return { picked: false, note: `The album "${album.name}" has finished; the rest of the show is open.` };
+  }
+  session.appendTurn({ role: 'event', kind: 'pick', text: eventText, meta: {} });
+  const position = `${next.index + 1} of ${next.total}`;
+  const outcome = await enqueueSelected(queue, ctx, {
+    song: next.track,
+    reason: `Track ${position}: "${next.track.title}" from ${album.name} (${album.artist}${album.year ? `, ${album.year}` : ''})`,
+    source: 'album-episode-order',
+    transition: null,
+  }, { wantLink: albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed() }), pickAnchor, showAt });
+  // Committed on a collision too, as the playlist walk does: a track push()
+  // refused must not be retried on every pick.
+  try {
+    await albumWalker.commit(occurrence.showId, next.track, next.index, next.sig);
+  } catch (err) {
+    queue.log('error', `album position for "${album.name}" not saved: ${(err as Error).message}`);
+  }
+  if (outcome === 'collision') {
+    queue.log('picker', `album pick "${next.track.title}" (${position}) refused by the queue — stepping past it`);
+  }
+  return { picked: true };
+}
+
 // Play in order (show.playlistInOrder, music/playlist-order.ts): the next anchor
 // track in the show's own running order, chosen with no model call. Returns
 // false — and runTrackEvent runs today's paths untouched — whenever the walk
-// cannot answer: not an in-order show, an anchor that will not resolve, an
-// artist episode in charge of this airing, or nothing eligible. The station
+// cannot answer: not an in-order show, an anchor that will not resolve, a
+// prepared episode in charge of this airing (an album episode is walked first,
+// by pickAlbumInOrder), or nothing eligible. The station
 // keeps making sound either way.
 //
 // Deliberately NOT applied: artist spacing, the album cooldown, the no-repeat
@@ -1446,19 +1510,22 @@ async function enqueueSelected(
 //
 // Resolved at `showAt`, the pick's look-ahead clock, like both other paths: a
 // pick made inside the incoming show's window walks the INCOMING show.
-async function pickInOrder(queue, ctx, { wantLink, pickAnchor, showAt = null, eventText }: { wantLink: boolean; pickAnchor?: any; showAt?: Date | null; eventText: string }): Promise<boolean> {
+async function pickInOrder(queue, ctx, { wantLink, linkEligible, cheap, pickAnchor, showAt = null, eventText }: { wantLink: boolean; linkEligible: boolean; cheap: boolean; pickAnchor?: any; showAt?: Date | null; eventText: string }): Promise<{ picked: boolean; note?: string }> {
+  const album = await pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pickAnchor, showAt, eventText });
+  if (album.picked) return album;
   const show = settings.resolveActiveShow(showAt ?? undefined);
-  if (!isInOrderShow(show)) return false;
+  if (!isInOrderShow(show)) return album;
   ctx = await prepareEpisodeContext(ctx);
-  if (showPreparation.read({ context: ctx }).music) {
-    noteInOrderStandDown(queue, show, 'an artist episode is steering this airing');
-    return false;
+  const steering = showPreparation.read({ context: ctx }).music;
+  if (steering) {
+    noteInOrderStandDown(queue, show, `an ${steering.kind} episode is steering this airing`);
+    return album;
   }
   const next = await resolveInOrderNext(show, { busyIds: queue.queuedIds() });
   for (const warning of next.warnings) queue.log('picker', `Show "${show.name}": ${warning}`);
   if (!next.ok) {
     noteInOrderStandDown(queue, show, next.reason);
-    return false;
+    return album;
   }
   inOrderStandDowns.delete(show.id);
   session.appendTurn({ role: 'event', kind: 'pick', text: eventText, meta: {} });
@@ -1481,7 +1548,7 @@ async function pickInOrder(queue, ctx, { wantLink, pickAnchor, showAt = null, ev
   if (outcome === 'collision') {
     queue.log('picker', `in-order pick "${next.track.title}" (${position}) refused by the queue — stepping past it`);
   }
-  return true;
+  return { picked: true };
 }
 
 // Why each in-order show last stood aside, so the booth log says it once per
@@ -1531,8 +1598,11 @@ export function effectEventClause(historyNote = ''): string {
 // its context. Omitted means the cycle anchors to queue.current/history.
 // Resolves 'capped' when the hard cap stood the pick down, so the queue can
 // report the coast handover (#1992); undefined on every other path.
-export async function runTrackEvent(queue, ctx, { wantLink, showAt = null, pickAnchor = null, anchorPrior = null }: {
+export async function runTrackEvent(queue, ctx, { wantLink, linkEligible = false, showAt = null, pickAnchor = null, anchorPrior = null }: {
   wantLink: boolean;
+  // Whether a link could air on this seam at all (runPickCycle). Only the album
+  // walk reads it, to talk on every seam regardless of the cadence counter.
+  linkEligible?: boolean;
   showAt?: Date | null;
   pickAnchor?: any | null;
   anchorPrior?: any | null;
@@ -1564,7 +1634,7 @@ export async function runTrackEvent(queue, ctx, { wantLink, showAt = null, pickA
     const anchorPriorTrack = explicitPickAnchor ? (anchorPrior ?? null) : (queue.history[0]?.track ?? null);
     await library.load();
     const predecessor = predecessorContext(pickAnchor);
-    const eventText = explicitPickAnchor
+    let eventText = explicitPickAnchor
       ? `Pick-cycle anchor: "${pickAnchor?.title}" by ${pickAnchor?.artist}`
         + (anchorPriorTrack ? ` (after "${anchorPriorTrack.title}" by ${anchorPriorTrack.artist})` : '')
         + '. This queued track is the intended predecessor for this selection. Pick the track intended to follow that anchor.'
@@ -1579,10 +1649,13 @@ export async function runTrackEvent(queue, ctx, { wantLink, showAt = null, pickA
     // costs a model call. False means it stood aside and today's paths run.
     // A walked pick still records its show, so the next advanceRun sees the
     // show change it crossed (#1911).
-    if (await pickInOrder(queue, ctx, { wantLink, pickAnchor, showAt, eventText })) {
+    const inOrder = await pickInOrder(queue, ctx, { wantLink, linkEligible, cheap, pickAnchor, showAt, eventText });
+    if (inOrder.picked) {
       notePickShow(settings.resolveActiveShow(showAt ?? undefined));
       return;
     }
+    // An album that just finished says so once, on the first ordinary pick.
+    if (inOrder.note) eventText += ` ${inOrder.note}`;
 
     const djMode = !!settings.getEffectivePersona()?.djMode;
     // The show this pick will air in, on the same look-ahead clock as the pick

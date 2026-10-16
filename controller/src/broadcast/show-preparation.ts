@@ -117,17 +117,22 @@ export function createShowPreparation(deps: PreparationDeps) {
     writing = operation;
     await operation;
   };
+  // What callers see of a stored view. A finished album stops steering music
+  // and switches to its "has finished" grounding. Both read() and ensure()
+  // answer through this: prepareEpisodeContext hands links ensure()'s
+  // editorial, so masking read() alone kept every post-album link talking
+  // about the album.
+  const present = (view: EpisodeView, occurrence: PreparationOccurrence): EpisodeView =>
+    view.music && deps.musicActive && !deps.musicActive(view.music, occurrence)
+      ? { ...view, music: null, editorial: afterFinish.get(occurrence.id) ?? view.editorial }
+      : view;
   const read = ({ context }: { context: SessionContext }): EpisodeView => {
     const snapshot = deps.snapshot(context);
     if (!snapshot) return ordinary();
     const record = records.get(snapshot.occurrence.id);
     if (!record) return ordinary();
     const cached = views.get(snapshot.occurrence.id);
-    if (cached) {
-      return cached.music && deps.musicActive && !deps.musicActive(cached.music, snapshot.occurrence)
-        ? { ...cached, music: null, editorial: afterFinish.get(snapshot.occurrence.id) ?? cached.editorial }
-        : cached;
-    }
+    if (cached) return present(cached, snapshot.occurrence);
     return {
       status: { kind: record.kind === 'selected' && record.reason !== null ? 'degraded' : record.kind === 'ready' ? 'selected' : record.kind, occurrence: record.occurrence, skill: record.skill,
         subject: record.kind === 'failed' ? null : record.result.subject, reason: record.kind === 'ready' ? null : record.reason },
@@ -185,7 +190,7 @@ export function createShowPreparation(deps: PreparationDeps) {
       views.set(snapshot.occurrence.id, view);
       if (previous?.status.kind !== view.status.kind || previous.music?.identity !== music?.identity
           || JSON.stringify([...(previous.music?.ids ?? [])].sort()) !== JSON.stringify([...(music?.ids ?? [])].sort())) deps.changed?.();
-      return view;
+      return present(view, snapshot.occurrence);
     } catch (error) {
       if (!current(snapshot, context, true)) return ordinary();
       const reason = errorMessage(error);

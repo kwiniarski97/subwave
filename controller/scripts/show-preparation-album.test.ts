@@ -92,6 +92,12 @@ test('a finished album stops steering read().music, but preparedAlbum still answ
   assert.match(after, /"Record" has finished; the rest of the show is open/, 'links after the finish know the album is over');
   assert.doesNotMatch(after, /play this prepared album in album order/);
   assert.match(after, /<episode-source-data>/, 'the research stays available');
+  // prepareEpisodeContext hands links the editorial ensure() returns, not
+  // read()'s, so the finish must reach that path too (aired a link about the
+  // album's opener over an unrelated song once the walk had finished).
+  const ensured = await owner.ensure({ context });
+  assert.equal(ensured.music, null);
+  assert.match(ensured.editorial, /"Record" has finished; the rest of the show is open/);
 });
 
 test('grounding wording for artist episodes is unchanged', () => {

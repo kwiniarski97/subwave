@@ -20,3 +20,22 @@ export function activeLyricIndex(lines: readonly LyricLine[], posMs: number): nu
   }
   return found;
 }
+
+export interface LyricWindow {
+  /** The line just sung; null until the second line starts. */
+  past: LyricLine | null;
+  /** The line being sung now; null before the first timed line. */
+  current: LyricLine | null;
+  /** The line coming up; null after the last one. */
+  next: LyricLine | null;
+}
+
+/** The three lines around `index` (an activeLyricIndex result), so the
+ *  display never has to reason about the -1 "not started" index. */
+export function lyricWindow(lines: readonly LyricLine[], index: number): LyricWindow {
+  return {
+    past: index > 0 ? (lines[index - 1] ?? null) : null,
+    current: index >= 0 ? (lines[index] ?? null) : null,
+    next: lines[index + 1] ?? null,
+  };
+}

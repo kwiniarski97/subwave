@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activeLyricIndex } from './lyrics';
+import { activeLyricIndex, lyricWindow } from './lyrics';
 
 const lines = [
   { t: 1_000, text: 'one' },
@@ -24,4 +24,14 @@ test('untimed or empty input never yields an active line', () => {
   assert.equal(activeLyricIndex([], 5_000), -1);
   assert.equal(activeLyricIndex([{ t: null, text: 'x' }], 5_000), -1);
   assert.equal(activeLyricIndex(lines, NaN), -1);
+});
+
+test('the window before the first line has only a next line', () => {
+  assert.deepEqual(lyricWindow(lines, -1), { past: null, current: null, next: lines[0] });
+});
+
+test('the window brackets the active line', () => {
+  assert.deepEqual(lyricWindow(lines, 0), { past: null, current: lines[0], next: lines[1] });
+  assert.deepEqual(lyricWindow(lines, 1), { past: lines[0], current: lines[1], next: lines[2] });
+  assert.deepEqual(lyricWindow(lines, 2), { past: lines[1], current: lines[2], next: null });
 });

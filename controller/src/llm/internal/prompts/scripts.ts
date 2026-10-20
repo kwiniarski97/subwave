@@ -5,7 +5,7 @@
 
 import * as settings from '../../../settings.js';
 import { djText } from '../strategy/text.js';
-import { djSystem, lengthPhrase } from './system.js';
+import { djSystem, lengthPhrase, stationIdMaxSentences } from './system.js';
 import { onAirLocationGrounding } from './grounding.js';
 import { buildContextLines, decoratePrompt, pickTimePhrase, randomSeed } from './context.js';
 import { speakClockAllowed } from '../../../broadcast/clock-policy.js';
@@ -205,7 +205,11 @@ export function stationIdPrompt({ context = null, persona = null }: any = {}) {
   const speaker = persona || settings.getEffectivePersona();
   const djName = speaker?.name || 'your host';
   const stationName = settings.get().station;
-  const ctxLines = buildContextLines(context, { contextFields: SCRIPT_CONTEXT_FIELDS });
+  // No episode grounding: it is the per-LINK brief plus the episode's source
+  // data, and a one-sentence ident handed "share one fact in each link" and a
+  // sixteen-row tracklist read the whole tracklist out after its ident. The
+  // show line still says what is on.
+  const ctxLines = buildContextLines(context ? { ...context, episodeEditorial: '' } : context, { contextFields: SCRIPT_CONTEXT_FIELDS });
   // Daypart only: an ident is generated at the cron tick but airs after
   // LLM + TTS + voice-queue latency — an exact "18:15" routinely lands on air
   // minutes late (issue #864). "Keep it loose, never the exact minutes" was
@@ -236,12 +240,27 @@ export function stationIdPrompt({ context = null, persona = null }: any = {}) {
 
 export async function generateStationId({ recap = null, context = null, recentOpeners = null, persona = null }: any = {}) {
   const speaker = persona || settings.getEffectivePersona();
-  return djText({
+  const script = await djText({
     system: djSystem(speaker),
     prompt: decoratePrompt(stationIdPrompt({ context, persona: speaker }), { kind: 'station_id', recap, recentOpeners }),
     temperature: 1.0, topP: 0.9, repeatPenalty: 1.25, seed: randomSeed(),
     kind: 'generateStationId',
   });
+  return capSentences(script, stationIdMaxSentences(speaker));
+}
+
+// Keeps the first `max` sentences. A boundary is end punctuation, whitespace,
+// then an uppercase letter or an opening quote, so "Texas Pt. 1" survives;
+// "St. Vincent" splits early, which is why the ident cap carries a sentence
+// of slack. Text with no boundary past the cap comes back unchanged.
+export function capSentences(text: string, max: number): string {
+  if (typeof text !== 'string' || !(max > 0)) return text;
+  const boundary = /[.!?…]+["'”»]?\s+(?=[\p{Lu}"'„«“])/gu;
+  let count = 0;
+  for (const m of text.matchAll(boundary)) {
+    if (++count === max) return text.slice(0, m.index + m[0].length).trim();
+  }
+  return text;
 }
 
 // --- Persona handoff at a show boundary ------------------------------------

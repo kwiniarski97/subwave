@@ -149,6 +149,16 @@ export function lengthMode(persona: any = settings.getEffectivePersona()) {
   return l && Object.hasOwn(LENGTH_PHRASES, l) ? l : 'concise';
 }
 
+// The most sentences an ident may air: each mode's stationId phrase above,
+// plus one of slack for an abbreviation the splitter reads as a full stop.
+// A prompt alone did not hold it — an episode brief once turned a
+// one-sentence ident into seventeen.
+const STATION_ID_MAX_SENTENCES: Record<string, number> = { 'one-liner': 2, concise: 2, extended: 4, storyteller: 5 };
+
+export function stationIdMaxSentences(persona?: any) {
+  return STATION_ID_MAX_SENTENCES[lengthMode(persona)];
+}
+
 // The length directive for one segment kind, for the on-air (or given) persona.
 export function lengthPhrase(kind: string, persona?: any) {
   const m = (LENGTH_PHRASES as any)[lengthMode(persona)];

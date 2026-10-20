@@ -19,8 +19,19 @@ const DRAW = 20;
 
 // The whole preparation must finish inside the controller's 30 s budget, and
 // research is optional, so a slow search provider gives up here rather than
-// failing the airing's album with it. Exported so a test can shorten it.
-export const timing = { researchMs: 6000 };
+// failing the airing's album with it. Selection (one model call) runs first,
+// so research gets what is left with room to spare. A meta-search engine such
+// as SearXNG routinely needs more than 6 s, which left research empty.
+// Exported so a test can shorten it.
+export const timing = { researchMs: 12000 };
+
+// Wikipedia is asked directly, beside the search provider: a search snippet is
+// 300 characters, an article lead is the record's actual history. Swappable so
+// a test never reaches the network.
+export const net = { fetch: (url, init) => fetch(url, init) };
+const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
+// Wikimedia refuses an anonymous client, so the request names itself.
+const wikiInit = () => ({ headers: { 'User-Agent': 'SUB-WAVE radio album-of-the-day skill (https://github.com/perminder-klair/subwave)' }, signal: AbortSignal.timeout(timing.researchMs) });
 
 // A field left blank arrives as '' (or not at all), and Number('') is 0, so a
 // blank would silently mean "no limit". Blank means the default.
@@ -75,15 +86,79 @@ async function filteredPick(services, limits, ctx) {
 	return null;
 }
 
-async function research(services, album) {
+// What a music server appends to a release title: "(Remastered Deluxe
+// Edition)", "[2011 Remaster]". Pages about the record use the plain title,
+// so searching or filtering on the edition's name finds nothing but shop
+// listings that happen to repeat it.
+const EDITION_MARK = /\b(remaster(ed)?|deluxe|edition|anniversary|expanded|reissue(d)?|bonus|mono|stereo|version|special|collector'?s?)\b/i;
+
+export function baseTitle(name) {
+	let title = String(name || '').trim();
+	for (;;) {
+		const m = title.match(/\s*[([]([^()[\]]*)[)\]]\s*$/);
+		if (!m || !EDITION_MARK.test(m[1])) break;
+		title = title.slice(0, m.index).trim();
+	}
+	return title || String(name || '').trim();
+}
+
+export const isEdition = name => baseTitle(name) !== String(name || '').trim();
+
+const fold = text => String(text || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+
+// A page counts when it names both the record and the artist, and its own
+// title names one of them. The snippet alone is not enough: a shop page for
+// another band's album lists this one, artist and all, under "related albums".
+function aboutAlbum(row, album) {
+	const title = fold(baseTitle(album.name));
+	const artist = fold(album.artist);
+	const heading = fold(row.title);
+	const text = `${heading} ${fold(row.content)}`;
+	return text.includes(title) && text.includes(artist) && (heading.includes(title) || heading.includes(artist));
+}
+
+async function searchResearch(services, album) {
 	if (!services.searchReady()) return [];
+	const title = baseTitle(album.name);
+	const queries = [`${album.artist} "${title}" album`, `${album.artist} ${title} album review`];
+	const answers = await Promise.allSettled(queries.map(q => services.searchWeb(q)));
+	const seen = new Set();
+	const rows = [];
+	for (const answer of answers) {
+		if (answer.status !== 'fulfilled') continue;
+		for (const row of answer.value?.results || []) {
+			const key = String(row.url || row.title || '');
+			if (seen.has(key) || !aboutAlbum(row, album)) continue;
+			seen.add(key);
+			rows.push({ title: String(row.title || '').slice(0, 200), url: String(row.url || ''), content: String(row.content || '').slice(0, 700) });
+		}
+	}
+	return rows;
+}
+
+async function wikipediaResearch(album) {
 	try {
-		const found = await services.searchWeb(`"${album.artist}" "${album.name}" album recording history`);
-		const needle = album.name.toLowerCase();
-		return (found?.results || [])
-			.filter(row => `${row.title || ''} ${row.content || ''}`.toLowerCase().includes(needle))
-			.slice(0, 4)
-			.map(row => ({ title: String(row.title || '').slice(0, 200), url: String(row.url || ''), content: String(row.content || '').slice(0, 700) }));
+		const title = baseTitle(album.name);
+		const search = new URL(WIKIPEDIA_API);
+		for (const [k, v] of Object.entries({ action: 'query', list: 'search', srsearch: `${album.artist} ${title} album`, srlimit: '3', format: 'json' })) search.searchParams.set(k, v);
+		const hits = (await (await net.fetch(search, wikiInit())).json())?.query?.search || [];
+		const hit = hits.find(h => fold(h.title).includes(fold(title)));
+		if (!hit) return [];
+		const page = new URL(WIKIPEDIA_API);
+		for (const [k, v] of Object.entries({ action: 'query', prop: 'extracts', exintro: '1', explaintext: '1', redirects: '1', titles: hit.title, format: 'json' })) page.searchParams.set(k, v);
+		const pages = (await (await net.fetch(page, wikiInit())).json())?.query?.pages || {};
+		const extract = String(Object.values(pages)[0]?.extract || '').trim();
+		if (!extract || !fold(extract).includes(fold(album.artist))) return [];
+		return [{ title: `${hit.title} (Wikipedia)`, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(hit.title.replace(/ /g, '_'))}`, content: extract.slice(0, 1500) }];
+	} catch {
+		return [];
+	}
+}
+
+async function research(services, album) {
+	try {
+		const [wiki, web] = await Promise.all([wikipediaResearch(album), searchResearch(services, album).catch(() => [])]);
+		return [...wiki, ...web].slice(0, 5);
 	} catch {
 		// The album still airs without research. The DJ sticks to library facts.
 		return [];
@@ -112,15 +187,21 @@ export default async function prepareAlbumOfTheDay(ctx, state, services, config,
 		}
 		if (!album) return { available: false, reason: 'Navidrome returned no albums.' };
 	}
-	let songs = [];
-	try { songs = (await services.library.getAlbum(album.id)).slice().sort(byAlbumOrder); } catch { /* the controller resolves the album again */ }
+	const [songs, found] = await Promise.all([
+		services.library.getAlbum(album.id).then(list => list.slice().sort(byAlbumOrder)).catch(() => []), // the controller resolves the album again
+		withinBudget(research(services, album), timing.researchMs, []),
+	]);
+	// A reissue's tag dates the reissue, not the record, so it is labelled as
+	// such: "a 2020 album" aired for a record first released in 2000.
+	const dated = isEdition(album.name) ? { editionYear: album.year } : { year: album.year };
 	return {
 		available: true,
 		subject: `${album.name} by ${album.artist}`.slice(0, 160),
 		data: {
-			album: { name: album.name, artist: album.artist, year: album.year, genre: album.genre },
-			tracklist: songs.slice(0, 60).map((song, i) => ({ position: i + 1, title: String(song.title || '').slice(0, 160), durationSec: Number(song.duration) || null })),
-			research: await withinBudget(research(services, album), timing.researchMs, []),
+			album: { name: album.name, artist: album.artist, ...dated, genre: album.genre },
+			// No running times: a DJ handed them reads them out.
+			tracklist: songs.slice(0, 60).map((song, i) => ({ position: i + 1, title: String(song.title || '').slice(0, 160) })),
+			research: found,
 		},
 		music: { type: 'album', albumId: album.id },
 	};

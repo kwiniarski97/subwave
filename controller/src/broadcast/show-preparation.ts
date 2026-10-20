@@ -34,6 +34,7 @@ export interface EpisodeView {
   music: EpisodeSource | null;
   editorial: string;
 }
+const recordData = (record: PreparationRecord | undefined): unknown => record && 'result' in record ? record.result.data : null;
 const ordinary = (): EpisodeView => ({ status: { kind: 'unconfigured' }, music: null, editorial: '' });
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 const capabilityReady = (cap: LoadedCapability | undefined): boolean => {
@@ -55,7 +56,7 @@ export function preparationGrounding(result: AcceptedPreparation, music: 'restri
   const restriction = kind === 'album'
     // The per-link brief lives here, not in the skill's SKILL.md: preparation
     // runs the tool only, so this grounding is what every link writer reads.
-    ? { restricted: 'Automatic music selections play this prepared album in album order. In each link, share one fact or piece of trivia from the research below, never repeating anything said earlier. When the research runs out, talk about the songs from the tracklist (title, position, length) and never invent recording dates, personnel, chart positions or anecdotes. Call the last track the closing track. When the album has finished, the rest of the show is open.\n',
+    ? { restricted: 'Automatic music selections play this prepared album in album order. In each link, share one fact or piece of trivia from the research below, never repeating anything said earlier. When the research runs out, say less: name the song that is starting, or note where it sits on the record, and never invent recording dates, personnel, chart positions or anecdotes. Talk about one song per link, never read out the tracklist, and never state a song\'s running time. Call the last track the closing track. When the album has finished, the rest of the show is open.\n',
       finished: `The prepared album "${finishedAlbum}" has finished; the rest of the show is open. Say so at most once, and do not describe its songs as still playing in order.\n`,
       degraded: 'Album music is unavailable; ordinary broadcast safety playback is active. Do not claim the album is playing in order.\n' }
     : { restricted: 'Automatic music selections are restricted to this prepared artist.\n',
@@ -227,11 +228,13 @@ export function createShowPreparation(deps: PreparationDeps) {
   const occurrence = ({ context }: { context: SessionContext }) => deps.snapshot(context)?.occurrence ?? null;
   // The prepared album whatever its walk's state. read() hides a finished
   // album's music, but the walk itself needs the album to know it has finished.
-  const preparedAlbum = ({ context }: { context: SessionContext }): { album: AlbumEpisodeSource; occurrence: PreparationOccurrence } | null => {
+  // `data` is the tool's own source data (album-episode-policy.ts counts its
+  // research to decide how many seams talk).
+  const preparedAlbum = ({ context }: { context: SessionContext }): { album: AlbumEpisodeSource; occurrence: PreparationOccurrence; data: unknown } | null => {
     const snapshot = deps.snapshot(context);
     if (!snapshot) return null;
     const music = views.get(snapshot.occurrence.id)?.music;
-    return music?.kind === 'album' ? { album: music, occurrence: snapshot.occurrence } : null;
+    return music?.kind === 'album' ? { album: music, occurrence: snapshot.occurrence, data: recordData(records.get(snapshot.occurrence.id)) } : null;
   };
   return { recover, read, ensure, retry, occurrence, preparedAlbum };
 }

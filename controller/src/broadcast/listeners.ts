@@ -309,6 +309,12 @@ export function setStreamIdle(v: boolean) {
   streamIdle = v;
 }
 
+// Whether the music chain itself is paused (stream-idle.ts), as opposed to
+// merely playing to an empty room.
+export function isStreamIdle() {
+  return streamIdle;
+}
+
 // True when autonomous DJ LLM work is allowed. Fails OPEN on an unknown count
 // so a stats outage never takes the DJ off the air. An idle-paused stream
 // blocks regardless of the toggle: the voice queues aren't being pulled, so any

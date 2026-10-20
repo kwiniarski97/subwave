@@ -33,8 +33,8 @@ import { requiresGrounding, standDownReason } from './abstain-policy.js';
 import { runCohostedCapability } from './cohosted.js';
 import * as sfx from '../broadcast/sfx.js';
 import { getWeatherOutlook } from '../context.js';
-import { isWeatherNews, recordWeatherAired, weatherMention, type WeatherMention } from './weather-policy.js';
-import type { WeatherCondition } from '../weather-codes.js';
+import { isWeatherNews, outlookKey, recordWeatherAired, weatherMention, type WeatherMention } from './weather-policy.js';
+import { isWeatherCondition, type WeatherCondition } from '../weather-codes.js';
 
 // dataBlock lives in llm/segment-tools.js so the co-hosted pool path can share
 // it without an import cycle; re-exported here for llm-bench's existing path.
@@ -198,8 +198,27 @@ const segmentState: SegmentState = {
 // Whether the weather is news this tick: the sky or its outlook changed since
 // the last aired weather segment. Both gates below ask this, and the weather
 // tool asks the same helper through services.weatherNews (weather-policy.ts).
+//
+// The first real reading after a boot only sets the baseline: the memory is
+// in-process, so treating "nothing remembered" as news aired a weather segment
+// after every controller restart. An unknown reading is no reading at all and
+// sets nothing.
 function weatherIsNews(ctx) {
-  return isWeatherNews({ condition: ctx?.weather?.condition, kinds: getWeatherOutlook().kinds }, segmentState);
+  const condition = ctx?.weather?.condition;
+  const kinds = getWeatherOutlook().kinds;
+  if (segmentState.lastWeatherCondition === null && segmentState.lastWeatherOutlook === null) {
+    if (!isWeatherCondition(condition)) return false;
+    segmentState.lastWeatherCondition = condition;
+    if (Array.isArray(kinds) && kinds.length) segmentState.lastWeatherOutlook = outlookKey(kinds);
+    return false;
+  }
+  return isWeatherNews({ condition, kinds }, segmentState);
+}
+
+// Test seam: back to a fresh boot.
+export function resetWeatherMemory(): void {
+  segmentState.lastWeatherCondition = null;
+  segmentState.lastWeatherOutlook = null;
 }
 
 // One run's view of the weather tool. `onData` sees every tool result the run

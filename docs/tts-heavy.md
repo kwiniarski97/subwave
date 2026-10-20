@@ -456,6 +456,43 @@ alongside `engines: [...]` (what it can speak with right now), so you can
 confirm the selection took. An empty or all-typo value falls back to loading
 both, so a bad entry never silently disables all heavy TTS.
 
+### PocketTTS in other languages (Polish, French, German…)
+
+PocketTTS picks its model from each persona's **Language** field (Settings →
+Personas), so one station can mix an English host and a Polish one:
+
+| Persona language | Model |
+| --- | --- |
+| English, or anything PocketTTS has no model for | kyutai's English model (as before) |
+| Polish / Polski / pl | [`shefowl/pocket-tts-polish-6l`](https://huggingface.co/shefowl/pocket-tts-polish-6l), a community fine-tune (CC-BY-4.0) |
+| French, German, Italian, Spanish, Portuguese, Dutch | kyutai's official model for that language |
+
+Each model downloads and loads on its first line, then stays resident
+(~350 MB each in float32). A model that fails to load fails only its own
+lines, which your rescue voice then speaks — PocketTTS never reads Polish
+with the English model.
+
+**Polish needs a cloned voice.** The built-in voices (`alba`, `charles`…) are
+precomputed for kyutai's own weights, so on the Polish model they are re-cloned
+from an English speaker and read with an English accent. Import a ~10 s clip of
+a native speaker on the Voices page and pick it as the persona's voice; the
+admin and `/debug` warn when a Polish persona is left on a built-in. Slow,
+clear reference speech gives noticeably better pronunciation. Unlike English,
+the Polish model clones without `HF_TOKEN`.
+
+Two optional settings in the root `.env`:
+
+```ini
+# Lines with no persona language (jingles) use this model; empty = english.
+POCKET_TTS_DEFAULT_LANGUAGE=polish
+# int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+POCKET_TTS_QUANTIZE=1
+```
+
+On a small CPU (an Intel N150, say) PocketTTS rendering competes with
+Liquidsoap for the same cores; if you hear the mix stutter while a line
+renders, cap the sidecar with `cpus: 2` in a compose override.
+
 ### A house Chatterbox voice for personas that have none
 
 Chatterbox clones a voice from a reference WAV, and normally each persona

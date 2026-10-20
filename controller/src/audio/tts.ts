@@ -7,6 +7,7 @@ import { applyEdgeFades } from './wav-edges.js';
 import { measureClipLevel, voiceLevellingEnabled } from './clip-level.js';
 import * as chatterbox from './chatterbox.js';
 import * as pocketTts from './pocketTts.js';
+import { POCKET_TTS_CLONE_ONLY_LANGUAGES, pocketTtsLanguage } from '../schemas/pocket-tts.js';
 import { heavyColdEngines, heavyEnabledEngines } from './ttsHeavyClient.js';
 import * as remoteTts from './remoteTts.js';
 import * as gemini from './gemini.js';
@@ -605,9 +606,20 @@ export function describeRouting() {
   // A cloned PocketTTS voice silently reverts to a built-in when the gated
   // weights are absent (#238); surface why, not a healthy-looking no-op.
   let warning: string | null = null;
-  if (engine === 'pocket-tts' && isPocketClone(voice) && pocketTts.cloningAvailable() === false) {
+  // The cloning flag describes the gated English weights; a community-model
+  // language (Polish) is open and clones regardless, so it is never warned.
+  const pocketLanguage = pocketTtsLanguage(persona?.language);
+  const pocketCloneOnly = pocketLanguage !== '' && POCKET_TTS_CLONE_ONLY_LANGUAGES.includes(pocketLanguage);
+  if (engine === 'pocket-tts' && isPocketClone(voice) && pocketTts.cloningAvailable() === false && !pocketCloneOnly) {
     warning = 'PocketTTS voice cloning is unavailable in this build (gated weights '
       + 'not loaded) — this cloned voice reverts to a built-in. Set HF_TOKEN to enable cloning.';
+  }
+  // A community-model language (Polish) has no voices of its own, so a built-in
+  // is re-cloned from an English speaker: audible, but with an English accent.
+  if (!warning && engine === 'pocket-tts' && !isPocketClone(voice) && pocketCloneOnly) {
+    warning = `PocketTTS voices ${persona?.language} with a community model that has no `
+      + 'built-in voices — this built-in reads with an English accent. Import a native '
+      + "speaker's clip on the Voices page and pick it as this persona's voice.";
   }
   // The configured rescue, so /debug answers "what speaks if this engine dies".
   // `usable` probes the fallback's own cloud provider: the chain silently skips

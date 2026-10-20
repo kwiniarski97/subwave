@@ -1342,7 +1342,11 @@ async function pickViaPool(queue, ctx, { wantLink, pickAnchor, showAt = null }: 
 async function enqueueSelected(
   queue, ctx,
   result: { song: any; reason?: string | null; source?: string | null; transition?: string | null },
-  { wantLink, pickAnchor, showAt = null }: { wantLink: boolean; pickAnchor?: any; showAt?: Date | null },
+  { wantLink, pickAnchor, showAt = null, albumPosition = null }: {
+    wantLink: boolean; pickAnchor?: any; showAt?: Date | null;
+    // The album walk's place for this track; only the album path sets it.
+    albumPosition?: { index: number; total: number; album: string } | null;
+  },
 ): Promise<'queued' | 'collision'> {
   // Build the between-track link BEFORE enqueueing so it can ride on the queued
   // item and air when the pick starts. It back-announces the captured
@@ -1378,6 +1382,7 @@ async function enqueueSelected(
         // Announce mode alternates against the link that last AIRED; every
         // queue read stays at the call site, the prompt layer is handed values.
         lastLink: queue.getLastLinkText(),
+        albumPosition,
       });
       link = generated.link;
       linkPersona = generated.introPersona;
@@ -1502,7 +1507,7 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
     transition: null,
   }, {
     wantLink: albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed(), index: next.index, total: next.total, talkingPoints: albumTalkingPoints(data) }),
-    pickAnchor, showAt,
+    pickAnchor, showAt, albumPosition: { index: next.index, total: next.total, album: album.name },
   });
   // Committed on a collision too, as the playlist walk does: a track push()
   // refused must not be retried on every pick.

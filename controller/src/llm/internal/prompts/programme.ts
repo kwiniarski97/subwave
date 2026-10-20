@@ -9,7 +9,7 @@ import { djObject } from '../strategy/object.js';
 import { djSystem, lengthPhrase } from './system.js';
 import { buildContextLines, decoratePrompt, randomSeed } from './context.js';
 import { clipText } from '../core/pure.js';
-import { onAirLocationGrounding } from './grounding.js';
+import { onAirLocationGrounding, signoffEpisodeGrounding } from './grounding.js';
 import { namedSubjectLine } from '../../../broadcast/preparation-subject-wording.js';
 
 // Same field set as the free-text script generators (scripts.ts): ambient
@@ -240,6 +240,7 @@ export function outroTask({ show, plan = null, speaker = null, nextShowName = nu
 
 export async function generateProgrammeOutro({ show, plan = null, persona = null, context = null, recap = null, recentOpeners = null, nextShowName = null }: any) {
   const speaker = persona || settings.getEffectivePersona();
+  if (context?.episodeEditorial) context = { ...context, episodeEditorial: signoffEpisodeGrounding(context.episodeEditorial) };
   const ctxLines = buildContextLines(context, { contextFields: PROGRAMME_CONTEXT_FIELDS });
   ctxLines.push(outroTask({ show, plan, speaker, nextShowName }));
   return djText({

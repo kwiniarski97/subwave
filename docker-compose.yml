@@ -272,6 +272,8 @@ services:
       - POCKET_TTS_DEFAULT_LANGUAGE=${POCKET_TTS_DEFAULT_LANGUAGE:-}
       # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
       - POCKET_TTS_QUANTIZE=${POCKET_TTS_QUANTIZE:-}
+      - POCKET_TTS_POLISH_MAX_TOKENS=${POCKET_TTS_POLISH_MAX_TOKENS:-}
+      - POCKET_TTS_POLISH_EOS_THRESHOLD=${POCKET_TTS_POLISH_EOS_THRESHOLD:-}
       # Which engines to load (comma-separated). Each costs RAM + a first-boot
       # weight download; set a single engine if you only use one.
       - TTS_HEAVY_ENGINES=${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}

@@ -41,6 +41,17 @@ check("english stays on the 2.x default model",
       w.LANGUAGE_MODELS["english"] == {"language": "english_2026-04"})
 check("polish loads the pinned fine-tune config",
       w.LANGUAGE_MODELS["polish"]["config"].startswith("hf://shefowl/pocket-tts-polish-6l/config.yaml@"))
+check("polish generates in clause-sized chunks",
+      w.generate_options("polish") == {"max_tokens": 15})
+check("english keeps pocket-tts's own chunking", w.generate_options("english") == {})
+opts = w.generate_options("polish")
+opts["max_tokens"] = 99
+check("generate_options hands out a copy", w.generate_options("polish") == {"max_tokens": 15})
+check("a malformed max-tokens env falls back", w._env_max_tokens("POCKET_TTS_UNSET_FOR_TEST", 15) == 15)
+check("polish holds a chunk open longer than the stock eos",
+      w.LANGUAGE_MODELS["polish"]["eos_threshold"] == -2.0)
+check("english keeps the stock eos", "eos_threshold" not in w.LANGUAGE_MODELS["english"])
+check("a malformed eos env falls back", w._env_float("POCKET_TTS_UNSET_FOR_TEST", -2.0) == -2.0)
 
 
 # --- load_language_model ------------------------------------------------------

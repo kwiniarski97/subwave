@@ -46,7 +46,8 @@ import { TRANSITION_EFFECTS, type TransitionEffect } from '../settings/vocab.js'
 import type { MixDropReason } from '../schemas/transitions.js';
 import { logEvent } from '../observability/events.js';
 import { recordPlaybackFailure } from '../observability/playback-failures.js';
-import { djCallsAllowed, presentListeners } from './listeners.js';
+import { djCallsAllowed, isStreamIdle, presentListeners } from './listeners.js';
+import { unheardAlbumStepDue } from './album-episode-policy.js';
 import { autoVoiceAllowed } from './voice-policy.js';
 import { speakClockAllowed, stationIdDaypartDrifted, stationIdDaypartStamp } from './clock-policy.js';
 import {
@@ -3613,9 +3614,33 @@ class Queue {
     // watcher still gets onTrackStarted events for those auto tracks, so the
     // first transition after a listener returns re-enters this block.
     const isAutonomous = this.current.source === 'auto' || this.current.source === 'ai';
-    if (this.autoPick && this.upcoming.length === 0 && !this.pickerBusy && djCallsAllowed()) {
-      this.runPickCycle({ isAutonomous });
+    if (this.autoPick && this.upcoming.length === 0 && !this.pickerBusy) {
+      const allowed = djCallsAllowed();
+      if (allowed) this.runPickCycle({ isAutonomous });
+      else if (unheardAlbumStepDue({ djCallsAllowed: allowed, streamIdle: isStreamIdle() })) this.runUnheardAlbumStep();
     }
+  }
+
+  // Album of the day with nobody listening (album-episode-policy.ts): walk the
+  // prepared album on with no model call and no link, so it airs in order from
+  // the top of the show rather than shuffled on auto.m3u. None of
+  // runPickCycle's boundary sequence runs, exactly as for any other empty-room
+  // track start; the :00 cron still rolls the session. The look-ahead clock is
+  // the pick cycle's, so a step near a show change asks the incoming show.
+  runUnheardAlbumStep() {
+    this.pickerBusy = true;
+    (async () => {
+      try {
+        const forecastNow = Date.now();
+        const leadSec = pickLeadSec(this.remainingSecOnAir(), null);
+        const showAt = pickShowDate(forecastNow, leadSec, showBoundary.nextShowBoundaryMs(forecastNow, 6 * 3600));
+        await djAgent.stepAlbumUnheard(this, await getFullContext(showAt ?? undefined), { showAt });
+      } catch (err) {
+        this.log('error', `Unheard album step failed: ${(err as Error).message}`);
+      } finally {
+        this.pickerBusy = false;
+      }
+    })();
   }
 
   async runArmedBoundaryHandoff({

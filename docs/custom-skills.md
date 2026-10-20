@@ -748,7 +748,10 @@ How it behaves:
 - **Order.** Songs air in album order, one per pick, and never shuffled. Songs the
   show's rules exclude (the blocklist, excluded playlists, length limits,
   strict locks) are skipped, never substituted. A listener request still plays
-  in between.
+  in between. With **Pause DJ when empty** (Admin → LLM) on, the album still
+  steps through in order to an empty room (that costs no model call). Only the
+  links stay off. So a listener who tunes in mid-show hears the album where it
+  has got to, and it is never restarted from the first song.
 - **Talking.** Every seam during the album gets a link, whatever the host's
   frequency, as long as links can air at all. The per-link brief (one sourced
   fact per link, no invented details, the last song is the closing track) rides

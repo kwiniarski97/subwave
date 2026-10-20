@@ -1,6 +1,8 @@
 // Normalize language names/native names/ISO codes; unknown languages use the English sample.
 // Keep SUB/WAVE untranslated (#349). Static samples need no working LLM.
 
+import { normalizeLanguage } from '../schemas/pocket-tts.js';
+
 interface PreviewEntry {
   // Normalized match keys: english name, native name(s), ISO 639-1 code.
   keys: string[];
@@ -72,16 +74,6 @@ const ENTRIES: PreviewEntry[] = [
   { keys: ['english', 'en', 'en-gb', 'en-us'],
     sample: "You're listening to SUB/WAVE. This is a voice preview." },
 ];
-
-// "Türkçe" → "turkce": lowercase, strip combining marks, collapse whitespace.
-function normalizeLanguage(raw: string): string {
-  return raw
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 const LOOKUP = new Map<string, string>();
 for (const entry of ENTRIES) {

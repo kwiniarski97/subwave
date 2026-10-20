@@ -160,6 +160,8 @@ export type RemoteSpeakRequest = {
   out: string;
   voice?: string;
   referenceWav?: string;
+  // PocketTTS model key (schemas/pocket-tts.ts); '' = the sidecar's default.
+  language?: string;
 };
 
 export async function speakRemote(req: RemoteSpeakRequest): Promise<string> {
@@ -175,6 +177,7 @@ export async function speakRemote(req: RemoteSpeakRequest): Promise<string> {
       text: req.text.trim(),
       voice: req.voice ?? '',
       reference_wav: req.referenceWav ?? '',
+      language: req.language ?? '',
       out: req.out,
     }),
     timeoutMs: config.ttsHeavy.requestTimeoutMs,

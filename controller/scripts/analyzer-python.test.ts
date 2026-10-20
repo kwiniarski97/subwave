@@ -25,6 +25,7 @@ const SUITES = [
   'idle_release_test.py', // idle model release + heavy clock (#1099/#1204)
   'vocal_gate_test.py', // vocal-stem gate thresholds (#1125) + DEMUCS_OVERLAP; case 6 needs torch, skips here
   'test_chatterbox_chunk.py', // chatterbox chunk_text (#1130)
+  'test_pocket_tts_language.py', // pocket-tts per-language model routing
   'tts_heavy_idle_test.py', // tts-heavy idle unload + cold-engine health (#1579)
   'analyzer_noise_test.py', // decode-noise filter + capability loss (#1300)
   'analyzer_silence_test.py', // edge dead-air measurement (silence trim)

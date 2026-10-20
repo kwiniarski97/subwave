@@ -196,6 +196,11 @@ services:
     environment:
       - TTS_HEAVY_DEVICE=${TTS_HEAVY_DEVICE:-cpu}
       - POCKET_TTS_VOICE=${POCKET_TTS_VOICE:-alba}
+      # The model for lines with no persona language (jingles); empty = english.
+      # A persona's own `language` picks its model regardless (Polish, French…).
+      - POCKET_TTS_DEFAULT_LANGUAGE=${POCKET_TTS_DEFAULT_LANGUAGE:-}
+      # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+      - POCKET_TTS_QUANTIZE=${POCKET_TTS_QUANTIZE:-}
       # Which engines to load (comma-separated); each costs RAM + weights.
       - TTS_HEAVY_ENGINES=${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
       # Idle seconds before an engine's worker is stopped and its memory

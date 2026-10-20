@@ -105,6 +105,7 @@ test('every speech prompt restricts station-location claims and permits sourced 
   assert.match(rule, /When referring to where the station, the DJ or the listeners are/);
   assert.match(rule, /local weather, local time, "here", "our city" or local events/);
   assert.match(rule, /only the configured on-air location "Leeds", or omit/);
+  assert.match(rule, /Inflect that name as the on-air language's grammar requires/, '"w Polska" aired: an uninflected name is not grammar');
   assert.match(rule, /Never invent or substitute another station, DJ or listener location/);
   for (const [name, prompt] of Object.entries(spokenPrompts())) {
     assert.ok(prompt.includes(rule), `${name} carries the shared rule verbatim`);

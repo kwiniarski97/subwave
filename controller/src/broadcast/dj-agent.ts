@@ -42,7 +42,7 @@ import {
 import { dropEchoedLink, enqueuePick, generatePickLink, trackFields, trimLinkToIntro } from './dj-agent/enqueue.js';
 import { advanceRun, notePickShow, runActive } from './dj-agent/runs.js';
 import { prepareEpisodeContext, showPreparation, notifyPreparationChanged } from './show-preparation.js';
-import { albumLinkDue } from './album-episode-policy.js';
+import { albumLinkDue, albumTalkingPoints } from './album-episode-policy.js';
 import { albumWalker, type AlbumNext } from '../music/album-walk-next.js';
 import { albumSlot } from '../music/album-walk.js';
 import { prepareShortlistSearches } from './shortlist-search-preparation.js';
@@ -1452,7 +1452,7 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   ctx = await prepareEpisodeContext(ctx);
   const prepared = showPreparation.preparedAlbum({ context: ctx });
   if (!prepared) return { picked: false };
-  const { album: source, occurrence } = prepared;
+  const { album: source, occurrence, data } = prepared;
   const { album } = source;
   const slot = albumSlot(occurrence);
   let next: AlbumNext;
@@ -1483,7 +1483,10 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
     reason: `Track ${position}: "${next.track.title}" from ${album.name} (${album.artist}${album.year ? `, ${album.year}` : ''})`,
     source: 'album-episode-order',
     transition: null,
-  }, { wantLink: albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed() }), pickAnchor, showAt });
+  }, {
+    wantLink: albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed(), index: next.index, total: next.total, talkingPoints: albumTalkingPoints(data) }),
+    pickAnchor, showAt,
+  });
   // Committed on a collision too, as the playlist walk does: a track push()
   // refused must not be retried on every pick.
   try {

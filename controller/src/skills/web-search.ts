@@ -13,7 +13,7 @@ const DDG_ENDPOINT = 'https://api.duckduckgo.com/';
 const BRAVE_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
 const KEENABLE_ENDPOINT = 'https://api.keenable.ai/v1/search';
 
-type SearchResult = { title: string; content: string };
+type SearchResult = { title: string; content: string; url?: string };
 type SearchResponse = { answer: string; results: SearchResult[] };
 
 // 30-min TTL cache keyed by `${provider}:${query}`. BOUNDED: the request path's
@@ -218,7 +218,8 @@ export function parseSearxngResponse(data: unknown): SearchResponse {
     const title = typeof rec.title === 'string' ? rec.title.trim() : '';
     const content = typeof rec.content === 'string' ? rec.content.trim().slice(0, 300) : '';
     if (!title || !content) continue;
-    results.push({ title, content });
+    const url = typeof rec.url === 'string' ? rec.url.trim() : '';
+    results.push(url ? { title, content, url } : { title, content });
     if (results.length >= 10) break;
   }
 

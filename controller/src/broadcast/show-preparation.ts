@@ -277,7 +277,11 @@ export const showPreparation = createShowPreparation({
     if (!policy.allowed) throw new Error(policy.reason);
     if (!capabilityReady(cap)) throw new Error('The preparation skill is not ready');
     const { fetchSegmentData } = await import('../llm/segment-tools.js');
-    const data: unknown = await fetchSegmentData(cap, context, {}, { timeoutMs: PREPARATION_TOOL_TIMEOUT_MS });
+    // The airing's own window rides along, so a tool can fit its music inside
+    // it: an 85-minute album prepared for a 60-minute takeover lost its last
+    // six tracks to the next show.
+    const episode = { startsAt: snap.occurrence.startsAt, endsAt: snap.occurrence.endsAt };
+    const data: unknown = await fetchSegmentData(cap, { ...context, episode }, {}, { timeoutMs: PREPARATION_TOOL_TIMEOUT_MS });
     if (data && typeof data === 'object' && 'error' in data) throw new Error(String(data.error));
     return data;
   },

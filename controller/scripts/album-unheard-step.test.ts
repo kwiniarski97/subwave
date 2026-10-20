@@ -22,8 +22,8 @@ test('steps only when the room is empty and the music is playing', () => {
 
 test('a track start with DJ calls blocked takes the unheard step, never the pick cycle', () => {
   const body = bodyOf(read('../src/broadcast/queue.ts'), '  onTrackStarted(');
-  const gate = body.slice(body.indexOf('if (this.autoPick && this.upcoming.length === 0 && !this.pickerBusy)'));
-  assert.match(gate, /if \(allowed\) this\.runPickCycle\(\{ isAutonomous \}\);\s*else if \(unheardAlbumStepDue\(/);
+  const gate = body.slice(body.indexOf('if (this.upcoming.length === 0 && !this.pickerBusy)'));
+  assert.match(gate, /if \(!closed\) \{ if \(!this\._albumStepBusy\) this\.runPickCycle\(\{ isAutonomous \}\); \}\s*else \{[\s\S]*?if \(closed === 'listeners' && !this\._albumStepBusy && unheardAlbumStepDue\(/);
 });
 
 test('the unheard step makes no link and no model call', () => {

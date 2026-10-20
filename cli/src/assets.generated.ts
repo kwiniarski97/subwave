@@ -276,6 +276,11 @@ services:
       - TTS_HEAVY_DEVICE=\${TTS_HEAVY_DEVICE:-cpu}
       # Default PocketTTS voice when a persona doesn't override it.
       - POCKET_TTS_VOICE=\${POCKET_TTS_VOICE:-alba}
+      # The model for lines with no persona language (jingles); empty = english.
+      # A persona's own \`language\` picks its model regardless (Polish, French…).
+      - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
+      # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+      - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
       # Which engines to load (comma-separated). Each costs RAM + a first-boot
       # weight download; set a single engine if you only use one.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
@@ -639,6 +644,11 @@ services:
     environment:
       - TTS_HEAVY_DEVICE=\${TTS_HEAVY_DEVICE:-cpu}
       - POCKET_TTS_VOICE=\${POCKET_TTS_VOICE:-alba}
+      # The model for lines with no persona language (jingles); empty = english.
+      # A persona's own \`language\` picks its model regardless (Polish, French…).
+      - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
+      # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+      - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
       # Which engines to load (comma-separated); each costs RAM + weights.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
       # Idle seconds before an engine's worker is stopped and its memory
@@ -936,6 +946,11 @@ services:
     environment:
       - TTS_HEAVY_DEVICE=\${TTS_HEAVY_DEVICE:-cpu}
       - POCKET_TTS_VOICE=\${POCKET_TTS_VOICE:-alba}
+      # The model for lines with no persona language (jingles); empty = english.
+      # A persona's own \`language\` picks its model regardless (Polish, French…).
+      - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
+      # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+      - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
       # Which engines to load (comma-separated); each costs RAM + weights.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
       # Idle seconds before an engine's worker is stopped and its memory
@@ -1268,6 +1283,17 @@ SITE_URL=
 # mismatch falls back to streaming, so it is safe to leave on — it just does
 # nothing for the tracks whose paths don't line up.
 # MUSIC_LIBRARY_PATH=
+# Optional: an octo-fiesta proxy (https://github.com/V1ck3s/octo-fiesta) in
+# front of the same Navidrome. Songs it names \`ext-<provider>-song-<id>\` —
+# ones your library does not hold — stream and take cover art from here, so an
+# operator or an agent can queue them (POST /dj/queue-track, MCP
+# subwave_queue_track). Everything else stays on NAVIDROME_URL: the picker and
+# tagger never see outside songs. Run octo-fiesta with STORAGE_MODE=Cache to
+# keep one-off plays out of the library. Listener requests can use it too, once
+# Admin → Station → "Requests from outside the library" is switched on.
+# Container-to-container it listens on 8080; its own compose maps that to 5274
+# on the host (http://host.docker.internal:5274).
+# OCTO_FIESTA_URL=http://octo-fiesta:8080
 # TTS_SPEED=0.85
 # Routine fallback refresh uses hourly minute-step cadence, rotated off :00/:02:
 # default 60 (and values >=60) runs hourly at :07, not every N elapsed minutes.
@@ -1437,6 +1463,15 @@ SITE_URL=
 # never loads. Comma-separated; default loads both. Only matters with
 # --profile tts-heavy.
 # TTS_HEAVY_ENGINES=pocket-tts     # or: chatterbox  |  chatterbox,pocket-tts
+#
+# PocketTTS picks a model per persona from the persona's Language field:
+# English, Polish (a community fine-tune), French, German, Italian, Spanish,
+# Portuguese or Dutch; anything else reads as English. Each model loads on its
+# first line and stays resident (~350MB each, about half with int8). Lines with
+# no persona language (jingles) use the default below. Polish has no built-in
+# voices: give each Polish persona its own ~10s clip on the Voices page.
+# POCKET_TTS_DEFAULT_LANGUAGE=polish   # empty = english
+# POCKET_TTS_QUANTIZE=1                # int8: faster on CPU, ~half the RAM, tiny accuracy cost
 #
 # How long an idle heavy-TTS engine stays loaded. Chatterbox is ~4GB resident
 # (weights, plus torch's CUDA context on a GPU host) and used to be held for

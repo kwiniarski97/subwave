@@ -267,6 +267,11 @@ services:
       - TTS_HEAVY_DEVICE=${TTS_HEAVY_DEVICE:-cpu}
       # Default PocketTTS voice when a persona doesn't override it.
       - POCKET_TTS_VOICE=${POCKET_TTS_VOICE:-alba}
+      # The model for lines with no persona language (jingles); empty = english.
+      # A persona's own `language` picks its model regardless (Polish, French…).
+      - POCKET_TTS_DEFAULT_LANGUAGE=${POCKET_TTS_DEFAULT_LANGUAGE:-}
+      # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
+      - POCKET_TTS_QUANTIZE=${POCKET_TTS_QUANTIZE:-}
       # Which engines to load (comma-separated). Each costs RAM + a first-boot
       # weight download; set a single engine if you only use one.
       - TTS_HEAVY_ENGINES=${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}

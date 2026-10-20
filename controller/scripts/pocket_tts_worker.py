@@ -10,6 +10,7 @@ JSON object per line over stdin/stdout.
 
 Request:  {"id": "...", "text": "...", "voice": "alba",
            "reference_wav": "/path/to/ref.wav",  # optional, empty = built-in
+           "language": "polish",                 # optional, empty = default
            "out": "/path/to.wav"}
 Response: {"id": "...", "ok": true,  "path": "/path/to.wav", "duration_s": 3.4}
        |  {"id": "...", "ok": false, "error": "..."}
@@ -20,6 +21,12 @@ Voice selection (issue #213):
   - "reference_wav" set     → zero-shot cloning from the WAV. The base voice
     is still passed so the model has a speaker prior if the reference load
     fails — the worker logs the failure and falls back instead of erroring.
+
+Language routing: "language" is a key from the controller's
+schemas/pocket-tts.ts and picks a MODEL (LANGUAGE_MODELS below). One
+model per language stays resident; the default language loads at boot, the
+others on their first line. An empty or unknown key means
+POCKET_TTS_DEFAULT_LANGUAGE (default "english"), which is also what jingles get.
 
 The model is bundled into the controller image only when it is built with
 `--build-arg WITH_POCKETTTS=1` (see docker/Dockerfile.controller). Weights live
@@ -32,6 +39,92 @@ import sys
 import traceback
 
 DEFAULT_VOICE = os.environ.get("POCKET_TTS_VOICE", "alba")
+
+# int8 weights: faster on CPU and about half the RAM, for a small accuracy cost
+# (pocket-tts measures ~27% faster on x86). Off by default
+# so an upgrade renders the same audio.
+QUANTIZE = os.environ.get("POCKET_TTS_QUANTIZE", "").strip().lower() in ("1", "true", "yes", "on")
+
+# What each language key loads, as load_model() kwargs. English is pinned to
+# english_2026-04, the default of the pocket-tts 2.x this sidecar used to ship,
+# so the newer package does not change the voice of an existing English station.
+# Polish is a community fine-tune (CC-BY-4.0), pinned to a reviewed revision.
+LANGUAGE_MODELS = {
+    "english": {"language": os.environ.get("POCKET_TTS_ENGLISH_MODEL") or "english_2026-04"},
+    "polish": {"config": os.environ.get("POCKET_TTS_POLISH_CONFIG") or (
+        "hf://shefowl/pocket-tts-polish-6l/config.yaml@cd9047ee2fc9d1eb40ed38673d8b220485713863"
+    )},
+    "french": {"language": "french"},
+    "german": {"language": "german"},
+    "italian": {"language": "italian"},
+    "spanish": {"language": "spanish"},
+    "portuguese": {"language": "portuguese"},
+    "dutch": {"language": "dutch"},
+}
+
+_default = (os.environ.get("POCKET_TTS_DEFAULT_LANGUAGE") or "english").strip().lower()
+DEFAULT_LANGUAGE = _default if _default in LANGUAGE_MODELS else "english"
+
+
+def resolve_language(requested):
+    """The LANGUAGE_MODELS key a request runs on: its own when known, else the
+    default. Never raises — an unknown key is a newer controller, not an error."""
+    key = (requested or "").strip().lower()
+    return key if key in LANGUAGE_MODELS else DEFAULT_LANGUAGE
+
+
+def load_language_model(TTSModel, key):
+    """Load one language's model. A pocket-tts too old to know the `language`
+    argument (TypeError) still loads its default English model, as before."""
+    kwargs = dict(LANGUAGE_MODELS[key])
+    if QUANTIZE:
+        kwargs["quantize"] = True
+    try:
+        return TTSModel.load_model(**kwargs)
+    except TypeError:
+        if key != "english":
+            raise
+        return TTSModel.load_model()
+
+
+class ModelPool:
+    """One resident model per language, loaded on first use. A language whose
+    model fails to load raises for that line only — the controller's rescue
+    voice takes it — and is retried on the next line."""
+
+    def __init__(self, loader):
+        self._loader = loader
+        self._models = {}
+
+    def get(self, key):
+        model = self._models.get(key)
+        if model is None:
+            model = self._loader(key)
+            self._models[key] = model
+        return model
+
+
+def predefined_voice_origins():
+    """Built-in voice name → its source .wav, or {} on a pocket-tts without it."""
+    try:
+        from pocket_tts.utils.utils import _ORIGINS_OF_PREDEFINED_VOICES
+        return dict(_ORIGINS_OF_PREDEFINED_VOICES)
+    except Exception:
+        return {}
+
+
+def voice_prompt_state(model, key, origins):
+    """get_state_for_audio_prompt(key), except that a built-in voice NAME on a
+    non-official model (the Polish fine-tune) is refused by pocket-tts — its
+    precomputed state belongs to the released weights. Cloning that voice from
+    its source .wav instead is what pocket-tts itself does for custom models."""
+    try:
+        return model.get_state_for_audio_prompt(key)
+    except ValueError:
+        origin = origins.get(key)
+        if not origin:
+            raise
+        return model.get_state_for_audio_prompt(origin)
 
 
 def emit(obj):
@@ -54,9 +147,17 @@ def main():
         emit({"id": None, "ok": False, "fatal": True, "error": f"import failed: {e}"})
         sys.exit(1)
 
-    log("loading TTSModel")
+    def loader(key):
+        log(f"loading TTSModel for {key!r}{' (int8)' if QUANTIZE else ''}")
+        return load_language_model(TTSModel, key)
+
+    pool = ModelPool(loader)
+    origins = predefined_voice_origins()
+
+    # The default language loads before "ready", exactly as the single model
+    # used to; a failure here is still fatal, since every jingle needs it.
     try:
-        model = TTSModel.load_model()
+        model = pool.get(DEFAULT_LANGUAGE)
     except Exception as e:
         emit({"id": None, "ok": False, "fatal": True, "error": f"model load failed: {e}"})
         sys.exit(1)
@@ -84,14 +185,15 @@ def main():
     # get_state_for_audio_prompt() does meaningful work (loads the speaker
     # embedding) — cache per voice id so repeat lines don't pay it again.
     # Reference-WAV clones cache under their absolute path; built-in ids
-    # cache under their id, so the two namespaces never collide.
+    # cache under their id, so the two namespaces never collide. A state is
+    # computed by one model, so the cache is per language too.
     voice_states = {}
 
-    def voice_state(key):
-        st = voice_states.get(key)
+    def voice_state(lang, model, key):
+        st = voice_states.get((lang, key))
         if st is None:
-            st = model.get_state_for_audio_prompt(key)
-            voice_states[key] = st
+            st = voice_prompt_state(model, key, origins)
+            voice_states[(lang, key)] = st
         return st
 
     log("ready")
@@ -113,6 +215,14 @@ def main():
             out = req.get("out")
             if not out:
                 raise ValueError("missing 'out' path")
+            lang = resolve_language(req.get("language"))
+            # Raises when this language's model cannot load: the line fails
+            # and the controller's rescue voice speaks it, rather than the
+            # English model reading Polish.
+            model = pool.get(lang)
+            # Cloning is a property of each model's weights; the Polish
+            # fine-tune is open, English needs the gated weights (#238).
+            has_voice_cloning = bool(getattr(model, "has_voice_cloning", True))
 
             # Resolve the speaker state, tracking whether the operator's chosen
             # voice/clone was actually honoured. fell_back=True means the
@@ -141,7 +251,7 @@ def main():
                     log(f"{fell_back_reason}; falling back to {voice!r}")
                 else:
                     try:
-                        state = voice_state(ref)
+                        state = voice_state(lang, model, ref)
                         voice_used = ref
                     except Exception as e:
                         fell_back = True
@@ -149,7 +259,7 @@ def main():
                         log(f"reference_wav {ref!r} failed ({e}); falling back to {voice!r}")
             if state is None:
                 try:
-                    state = voice_state(voice)
+                    state = voice_state(lang, model, voice)
                     voice_used = voice
                 except Exception as e:
                     # Unknown / unfetchable voice id — fall back to the default
@@ -161,7 +271,7 @@ def main():
                         fell_back_reason = f"voice {voice!r} failed: {e}"
                     log(f"voice {voice!r} failed ({e}); using default {DEFAULT_VOICE!r}")
                     voice = DEFAULT_VOICE
-                    state = voice_state(voice)
+                    state = voice_state(lang, model, voice)
                     voice_used = voice
 
             audio = model.generate_audio(state, text)

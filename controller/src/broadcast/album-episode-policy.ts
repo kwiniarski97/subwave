@@ -53,3 +53,40 @@ export function unheardAlbumStepDue({ djCallsAllowed, streamIdle }: {
 }): boolean {
   return !djCallsAllowed && !streamIdle;
 }
+
+// What this episode's links have already said, oldest first and in FULL. The
+// general recap trims each line to djBehaviour.recapChars (140), and an album
+// link opens with its place on the record and ends with the fact, so the trim
+// cut exactly the fact: one Still Life episode credited Fredrik Nordström in
+// three links running. `memory` is session.promptMemory() (aired, newest
+// first); `pending` are links written for queued tracks that have not aired
+// yet, so the next writer does not repeat one still waiting for its seam.
+export const EPISODE_SAID_MAX = 20;
+
+export function albumEpisodeSaid(
+  memory: readonly { t: string; kind: string; message: string }[],
+  pending: readonly (string | null | undefined)[],
+  sinceMs: number,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (text: unknown) => {
+    const line = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
+    if (!line || seen.has(line)) return;
+    seen.add(line);
+    out.push(line);
+  };
+  const aired = memory.filter(e => e.kind === 'link' && !(Date.parse(e.t) < sinceMs));
+  for (let i = aired.length - 1; i >= 0; i--) add(aired[i].message);
+  for (const text of pending) add(text);
+  return out.slice(-EPISODE_SAID_MAX);
+}
+
+// A FORCED album link (one the cadence counter would not have aired) may
+// decline: past the research, the alternative was the same fact again. The
+// writer answers with this token, and the seam plays without talk.
+export const ALBUM_LINK_DECLINE = 'SKIP';
+
+export function declinedAlbumLink(text: unknown): boolean {
+  return typeof text === 'string' && /^\W*skip\W*$/i.test(text.trim());
+}

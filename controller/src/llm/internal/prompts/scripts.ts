@@ -9,6 +9,7 @@ import { djSystem, lengthPhrase, stationIdMaxSentences } from './system.js';
 import { onAirLocationGrounding, signoffEpisodeGrounding } from './grounding.js';
 import { buildContextLines, decoratePrompt, pickTimePhrase, randomSeed } from './context.js';
 import { speakClockAllowed } from '../../../broadcast/clock-policy.js';
+import { ALBUM_LINK_DECLINE } from '../../../broadcast/album-episode-policy.js';
 import { isNamedRequester } from '../../../util/request-guard.js';
 import { introBudgetPhrase, introMsFor, firstVocalMsFor } from './intro-budget.js';
 import { trackEraYear } from '../../../music/show-filter.js';
@@ -92,7 +93,10 @@ const PERSONA_GROUNDING_RULE = 'FACTUAL GROUNDING: Treat supplied facts, includi
 // track ("Ode to Io" on Ode to Io) reads as the album's name, and a link
 // writer that had just said "the ninth track, Saguaro" said it again over the
 // tenth.
-type AlbumPosition = { index: number; total: number; album?: string | null } | null;
+// `said` is what this episode's links already said, in full, and `mayDecline`
+// marks a forced link that may answer ALBUM_LINK_DECLINE instead
+// (album-episode-policy.ts).
+type AlbumPosition = { index: number; total: number; album?: string | null; said?: string[]; mayDecline?: boolean } | null;
 
 function verifiedContextPacket(context: any, current: any = null, clockIsAirTime = false, albumPosition: AlbumPosition = null): string {
   const moment: string[] = [];
@@ -430,6 +434,13 @@ export function linkPrompt({
   ];
   if (guestContribution?.name) {
     sections.push("Editorial Context:\n- " + String(guestContribution.name).trim() + " had a verified editorial hand in choosing this track. If natural, the host may briefly credit them; do not call it a favourite or explain selection mechanics.");
+  }
+  if (albumPosition?.said?.length) {
+    sections.push('Already said in this album episode, in full. Every fact here has been told: never state any of them again, even reworded or as an aside:\n'
+      + albumPosition.said.map((line: string) => `- ${stripSpokenTags(line)}`).join('\n'));
+  }
+  if (albumPosition?.mayDecline) {
+    sections.push(`If the research holds no fact that the lines above have not already told, output exactly ${ALBUM_LINK_DECLINE} and nothing else; this seam then plays without talk.`);
   }
   if (recap) {
     sections.push('Recent speech by this presenter, supplied only to prevent repetition. Do not reuse its wording, topics, anecdotes, metaphors or sentence structures:\n' + stripRecapSpokenTags(recap));

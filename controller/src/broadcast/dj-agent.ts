@@ -39,7 +39,7 @@ import {
 import { dropEchoedLink, enqueuePick, generatePickLink, trackFields, trimLinkToIntro } from './dj-agent/enqueue.js';
 import { advanceRun, notePickShow, runActive } from './dj-agent/runs.js';
 import { prepareEpisodeContext, showPreparation, notifyPreparationChanged } from './show-preparation.js';
-import { albumLinkDue, albumTalkingPoints } from './album-episode-policy.js';
+import { albumEpisodeSaid, albumLinkDue, albumTalkingPoints, declinedAlbumLink } from './album-episode-policy.js';
 import { albumWalker, type AlbumNext } from '../music/album-walk-next.js';
 import { albumSlot } from '../music/album-walk.js';
 import { prepareShortlistSearches } from './shortlist-search-preparation.js';
@@ -1263,8 +1263,9 @@ async function enqueueSelected(
   result: { song: any; reason?: string | null; source?: string | null; transition?: string | null },
   { wantLink, pickAnchor, showAt = null, albumPosition = null }: {
     wantLink: boolean; pickAnchor?: any; showAt?: Date | null;
-    // The album walk's place for this track; only the album path sets it.
-    albumPosition?: { index: number; total: number; album: string } | null;
+    // The album walk's place for this track, what the episode's links already
+    // said, and whether a forced link may decline; only the album path sets it.
+    albumPosition?: { index: number; total: number; album: string; said?: string[]; mayDecline?: boolean } | null;
   },
 ): Promise<'queued' | 'collision'> {
   // Build the between-track link BEFORE enqueueing so it can ride on the queued
@@ -1304,6 +1305,10 @@ async function enqueueSelected(
         albumPosition,
       });
       link = generated.link;
+      if (albumPosition?.mayDecline && declinedAlbumLink(link)) {
+        queue.log('picker', `album link for "${result.song?.title}" declined: nothing new to say`);
+        link = null;
+      }
       linkPersona = generated.introPersona;
       linkHostSpeech = generated.hostSpeech;
     } catch (err) {
@@ -1419,14 +1424,21 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   }
   session.appendTurn({ role: 'event', kind: 'pick', text: eventText, meta: {} });
   const position = `${next.index + 1} of ${next.total}`;
+  const due = albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed(), index: next.index, total: next.total, talkingPoints: albumTalkingPoints(data) });
   const outcome = await enqueueSelected(queue, ctx, {
     song: next.track,
     reason: `Track ${position}: "${next.track.title}" from ${album.name} (${album.artist}${album.year ? `, ${album.year}` : ''})`,
     source: 'album-episode-order',
     transition: null,
   }, {
-    wantLink: albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed: autoVoiceAllowed(), index: next.index, total: next.total, talkingPoints: albumTalkingPoints(data) }),
-    pickAnchor, showAt, albumPosition: { index: next.index, total: next.total, album: album.name },
+    wantLink: due, pickAnchor, showAt,
+    albumPosition: {
+      index: next.index, total: next.total, album: album.name,
+      said: due ? albumEpisodeSaid(session.promptMemory(), episodePendingLinks(queue), Number(occurrence.startsAt)) : [],
+      // Only a link the cadence would not have aired may decline; the closing
+      // track keeps its link.
+      mayDecline: due && !wantLink && next.index !== next.total - 1,
+    },
   });
   // Committed on a collision too, as the playlist walk does: a track push()
   // refused must not be retried on every pick.
@@ -1439,6 +1451,14 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
     queue.log('picker', `album pick "${next.track.title}" (${position}) refused by the queue — stepping past it`);
   }
   return { picked: true };
+}
+
+// Links written for the on-air and queued tracks that have not aired yet: the
+// session only stamps a link once it reaches air.
+function episodePendingLinks(queue): string[] {
+  return [queue.current, ...(queue.upcoming || [])]
+    .filter(item => item?.introKind === 'link' && item.introScript && !item.introAired)
+    .map(item => item.introScript);
 }
 
 // The album walk's step for a track start nobody is listening to

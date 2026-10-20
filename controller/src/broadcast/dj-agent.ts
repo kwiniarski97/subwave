@@ -1347,6 +1347,19 @@ async function pickAlbumInOrder(queue, ctx, { wantLink, linkEligible, cheap, pic
   return { picked: true };
 }
 
+// The album walk's step for a track start nobody is listening to
+// (album-episode-policy.ts unheardAlbumStepDue): the next album track in
+// order, with no model call and no link. False when no album is prepared or it
+// has finished, and Liquidsoap keeps coasting on auto.m3u as before.
+export async function stepAlbumUnheard(queue, ctx, { showAt = null }: { showAt?: Date | null } = {}): Promise<boolean> {
+  const pickAnchor = queue.current?.track ?? null;
+  const eventText = `Now playing "${pickAnchor?.title}" by ${pickAnchor?.artist}`
+    + (pickAnchor?.id ? ` [id: ${pickAnchor.id}]` : '')
+    + '. Nobody is listening, so the album walk queued the next track without a link.';
+  const result = await pickAlbumInOrder(queue, ctx, { wantLink: false, linkEligible: false, cheap: true, pickAnchor, showAt, eventText });
+  return result.picked;
+}
+
 // Play in order (show.playlistInOrder, music/playlist-order.ts): the next anchor
 // track in the show's own running order, chosen with no model call. Returns
 // false — and runTrackEvent runs today's paths untouched — whenever the walk

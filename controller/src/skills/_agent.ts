@@ -332,13 +332,30 @@ function buildCohostedSituation(ctx, cap, { forced = false, brief = null }: { fo
 // model still gets to choose silence. Everything downstream is shared with
 // agenticTick.
 
+// Whether the weather has turned since it last aired. The first real reading
+// after a boot only sets the baseline: the memory is in-process, so treating
+// "nothing remembered" as a change aired a weather segment after every
+// controller restart. An unknown reading is no reading at all.
+export function weatherTurned(condition: string | null | undefined): boolean {
+  if (!condition || condition === 'unknown') return false;
+  if (segmentState.lastWeatherCondition === null) {
+    segmentState.lastWeatherCondition = condition;
+    return false;
+  }
+  return condition !== segmentState.lastWeatherCondition;
+}
+
+// Test seam: back to a fresh boot.
+export function resetWeatherMemory(): void {
+  segmentState.lastWeatherCondition = null;
+}
+
 // Which capability the simple path airs. Weather wins when the condition
 // actually changed (the one segment with a hard freshness signal) and is dropped
 // entirely when it hasn't; otherwise the least-recently-aired capability, random
 // among ties so the rotation spreads across the catalogue.
 export function chooseCapability(caps, ctx) {
-  const condition = ctx.weather?.condition || null;
-  const weatherChanged = !!condition && condition !== segmentState.lastWeatherCondition;
+  const weatherChanged = weatherTurned(ctx.weather?.condition);
   const pool = caps.filter(c => c.kind !== 'weather' || weatherChanged);
   if (!pool.length) return null;
   if (weatherChanged) {
@@ -472,8 +489,7 @@ export async function agenticTick(ctx) {
   if (caps.length === 0) return;
 
   // Weather alone and unchanged is provably nothing to say; skip the LLM call.
-  if (caps.length === 1 && caps[0].kind === 'weather'
-      && ctx.weather?.condition && ctx.weather.condition === segmentState.lastWeatherCondition) {
+  if (caps.length === 1 && caps[0].kind === 'weather' && !weatherTurned(ctx.weather?.condition)) {
     return;
   }
 

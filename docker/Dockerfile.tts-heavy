@@ -77,8 +77,13 @@ RUN python3 -m venv /opt/chatterbox/venv && \
     rm -rf "$SP/torch/include" "$SP/torch/test"
 
 # --- PocketTTS venv --------------------------------------------------------
-# Separate venv so its resolution doesn't fight chatterbox's. pocket-tts 2.1.0
-# needs torch>=2.5 / numpy>=2; torch held at the same 2.6.0 CPU wheel.
+# Separate venv so its resolution doesn't fight chatterbox's. pocket-tts 3.3.0
+# needs torch>=2.5 / numpy>=2; torch held at the same 2.6.0 CPU wheel. 3.x is
+# what loads community language fine-tunes (the Polish model's config carries
+# `default_temperature`, which 2.1.0 rejects); the worker pins English to
+# 2.1.0's default model so an upgrade keeps the same voice.
+# POCKET_TTS_QUANTIZE=1 uses torch's own dynamic int8 here — the faster torchao
+# backend needs torch 2.10+, so it is deliberately not installed.
 #
 # Voice cloning (#238) is a pure RUNTIME concern: the gated kyutai/pocket-tts
 # weights download lazily on first /speak once HF_TOKEN is set in the compose
@@ -89,7 +94,7 @@ RUN python3 -m venv /opt/pocket-tts/venv && \
     /opt/pocket-tts/venv/bin/pip install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cpu \
       --extra-index-url https://pypi.org/simple \
-      torch==2.6.0 scipy==1.17.1 pocket-tts==2.1.0 && \
+      torch==2.6.0 scipy==1.17.1 pocket-tts==3.3.0 && \
     /opt/pocket-tts/venv/bin/python -c \
       "from pocket_tts import TTSModel" && \
     find /opt/pocket-tts/venv -depth -type d -name __pycache__ -exec rm -rf {} + && \

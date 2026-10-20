@@ -18,6 +18,7 @@ import { resolveKeyPresence } from './cloudProviderMeta';
 import { VoicePreviewButton } from './VoicePreviewButton';
 import { GeminiVoiceLibrary } from './GeminiVoiceLibrary';
 import { VoicePicker, type VoicePickerGroup } from './VoicePicker';
+import { POCKET_TTS_CLONE_ONLY_LANGUAGES, pocketTtsLanguage } from '@/lib/schemas.generated';
 import { ENGINES, GEMINI_CLOUD_PROVIDER, INHERIT_ENGINE, PERSONA_ENGINES, type EngineAvailability } from './engineMeta';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -374,10 +375,25 @@ export function EngineVoiceFields({
         // means the engine confirmed it can't clone (issue #238).
         const ptCloning = data?.tts?.available?.pocketTtsCloning;
         const usingClone = isCustom || /\.wav$/i.test(selected);
+        // The persona's language picks the model, exactly as the engine does.
+        // A community fine-tune (Polish) has no voices of its own: a built-in
+        // is re-cloned from an English speaker's clip, which is the accent the
+        // persona will have.
+        const ptLanguage = pocketTtsLanguage(previewLanguage);
+        const cloneOnly = ptLanguage !== '' && POCKET_TTS_CLONE_ONLY_LANGUAGES.includes(ptLanguage);
         return (
           <div className="field max-w-[360px]">
             {!ptAvailable && notice('pocket-tts')}
-            {ptAvailable && ptCloning === false && usingClone && (
+            {ptAvailable && cloneOnly && !usingClone && (
+              <div className="mb-2.5 border border-[var(--accent)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--accent)]">
+                This persona speaks <strong>{previewLanguage}</strong>, which PocketTTS voices with a
+                community model that has no voices of its own. A built-in voice is an English
+                speaker, so it will read with an English accent.{' '}
+                <Link href="/admin/imaging?tab=voices" className="underline">Import a ~10s clip</Link>
+                {' '}of a native speaker and pick it under <em>Custom</em>.
+              </div>
+            )}
+            {ptAvailable && ptCloning === false && usingClone && !cloneOnly && (
               <div className="mb-2.5 border border-[var(--danger)] px-3 py-2.5 text-[11px] leading-[1.6] text-[var(--danger)]">
                 Voice <strong>cloning is unavailable</strong> in this build, so this
                 cloned voice won’t play; PocketTTS reverts to a built-in voice. The
@@ -394,7 +410,7 @@ export function EngineVoiceFields({
                 { label: 'Built-in', voices: pocketTtsVoices.map(v => ({ id: v.id, label: v.label })) },
                 ...(customVoices.length > 0
                   ? [{
-                    label: `Custom (cloned)${ptCloning === false ? ', cloning unavailable' : ''}`,
+                    label: `Custom (cloned)${ptCloning === false && !cloneOnly ? ', cloning unavailable' : ''}`,
                     voices: customVoices.map(v => ({ id: v, label: v })),
                   }]
                   : []),
@@ -411,8 +427,9 @@ export function EngineVoiceFields({
               preview={{ engine: 'pocket-tts', speed: previewSpeed, language: previewLanguage, adminFetch }}
             />
             <div className="field-hint">
-              CPU-only, ~6× real-time. Built-in voices cover English, French, German,
-              Italian, Spanish and Portuguese. To clone one,{' '}
+              CPU-only, ~6× real-time. The persona’s language picks the model: English,
+              Polish, French, German, Italian, Spanish, Portuguese or Dutch (anything else
+              reads as English). To clone a voice,{' '}
               <Link href="/admin/imaging?tab=voices" className="underline">import a ~5s clip on the Voices page</Link>
               {' '}and it’ll appear under <em>Custom</em> (cloning needs <code>HF_TOKEN</code>;
               see above).

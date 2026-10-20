@@ -628,6 +628,9 @@ class SpeakRequest(BaseModel):
     text: str
     voice: str = ""
     reference_wav: str = ""
+    # PocketTTS model key from the controller (schemas/pocket-tts.ts);
+    # empty = the worker's POCKET_TTS_DEFAULT_LANGUAGE. Ignored by chatterbox.
+    language: str = ""
     out: str
 
 
@@ -731,6 +734,7 @@ async def speak(req: SpeakRequest):
             # Reference WAV for zero-shot cloning (#213); the worker treats an
             # empty value as "use the built-in voice".
             "reference_wav": req.reference_wav or "",
+            "language": req.language or "",
             "out": req.out,
         }
     else:

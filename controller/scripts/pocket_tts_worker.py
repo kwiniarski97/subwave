@@ -45,15 +45,39 @@ DEFAULT_VOICE = os.environ.get("POCKET_TTS_VOICE", "alba")
 # so an upgrade renders the same audio.
 QUANTIZE = os.environ.get("POCKET_TTS_QUANTIZE", "").strip().lower() in ("1", "true", "yes", "on")
 
+
+def _env_max_tokens(name, default):
+    """A positive int from env, else the default — a typo never wedges the worker."""
+    try:
+        value = int(os.environ.get(name, "").strip())
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _env_float(name, default):
+    """A float from env, else the default — a typo never wedges the worker."""
+    try:
+        return float(os.environ.get(name, "").strip())
+    except ValueError:
+        return default
+
+
 # What each language key loads, as load_model() kwargs. English is pinned to
 # english_2026-04, the default of the pocket-tts 2.x this sidecar used to ship,
 # so the newer package does not change the voice of an existing English station.
 # Polish is a community fine-tune (CC-BY-4.0), pinned to a reviewed revision.
 LANGUAGE_MODELS = {
     "english": {"language": os.environ.get("POCKET_TTS_ENGLISH_MODEL") or "english_2026-04"},
-    "polish": {"config": os.environ.get("POCKET_TTS_POLISH_CONFIG") or (
-        "hf://shefowl/pocket-tts-polish-6l/config.yaml@cd9047ee2fc9d1eb40ed38673d8b220485713863"
-    )},
+    # eos_threshold -2 (pocket-tts default -4): the fine-tune declares a chunk
+    # finished before its last words. Higher holds it open; at 0 renders began
+    # to run on. See GENERATE_OPTIONS for the other half of the fix.
+    "polish": {
+        "config": os.environ.get("POCKET_TTS_POLISH_CONFIG") or (
+            "hf://shefowl/pocket-tts-polish-6l/config.yaml@cd9047ee2fc9d1eb40ed38673d8b220485713863"
+        ),
+        "eos_threshold": _env_float("POCKET_TTS_POLISH_EOS_THRESHOLD", -2.0),
+    },
     "french": {"language": "french"},
     "german": {"language": "german"},
     "italian": {"language": "italian"},
@@ -61,6 +85,23 @@ LANGUAGE_MODELS = {
     "portuguese": {"language": "portuguese"},
     "dutch": {"language": "dutch"},
 }
+
+
+# Per-language generate_audio() kwargs. pocket-tts packs sentences into chunks
+# of up to 50 tokens; the 6-layer Polish fine-tune ends a long chunk early and
+# drops its tail. Polish BPE spends ~2 tokens a word, so 15 splits at every
+# comma — one clause per chunk. Measured with Whisper over 5 renders of two
+# on-air lines: 15 tokens + eos -2 dropped 1 and 9 words, the stock 50/-4 several
+# per render. Neither lever alone gets there and nothing tried reaches zero.
+# Languages absent here keep pocket-tts's own default.
+GENERATE_OPTIONS = {
+    "polish": {"max_tokens": _env_max_tokens("POCKET_TTS_POLISH_MAX_TOKENS", 15)},
+}
+
+
+def generate_options(key):
+    return dict(GENERATE_OPTIONS.get(key, {}))
+
 
 _default = (os.environ.get("POCKET_TTS_DEFAULT_LANGUAGE") or "english").strip().lower()
 DEFAULT_LANGUAGE = _default if _default in LANGUAGE_MODELS else "english"
@@ -273,7 +314,7 @@ def main():
                     state = voice_state(lang, model, voice)
                     voice_used = voice
 
-            audio = model.generate_audio(state, text)
+            audio = model.generate_audio(state, text, **generate_options(lang))
             # generate_audio returns a torch tensor; coerce to a numpy float32
             # array in roughly [-1, 1].
             if hasattr(audio, "numpy"):

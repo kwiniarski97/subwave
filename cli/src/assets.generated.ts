@@ -281,6 +281,8 @@ services:
       - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
       # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
       - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
+      - POCKET_TTS_POLISH_MAX_TOKENS=\${POCKET_TTS_POLISH_MAX_TOKENS:-}
+      - POCKET_TTS_POLISH_EOS_THRESHOLD=\${POCKET_TTS_POLISH_EOS_THRESHOLD:-}
       # Which engines to load (comma-separated). Each costs RAM + a first-boot
       # weight download; set a single engine if you only use one.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
@@ -643,6 +645,8 @@ services:
       - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
       # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
       - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
+      - POCKET_TTS_POLISH_MAX_TOKENS=\${POCKET_TTS_POLISH_MAX_TOKENS:-}
+      - POCKET_TTS_POLISH_EOS_THRESHOLD=\${POCKET_TTS_POLISH_EOS_THRESHOLD:-}
       # Which engines to load (comma-separated); each costs RAM + weights.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
       # Idle seconds before an engine's worker is stopped and its memory
@@ -941,6 +945,8 @@ services:
       - POCKET_TTS_DEFAULT_LANGUAGE=\${POCKET_TTS_DEFAULT_LANGUAGE:-}
       # 1 = int8 weights: faster on CPU and about half the RAM, tiny accuracy cost.
       - POCKET_TTS_QUANTIZE=\${POCKET_TTS_QUANTIZE:-}
+      - POCKET_TTS_POLISH_MAX_TOKENS=\${POCKET_TTS_POLISH_MAX_TOKENS:-}
+      - POCKET_TTS_POLISH_EOS_THRESHOLD=\${POCKET_TTS_POLISH_EOS_THRESHOLD:-}
       # Which engines to load (comma-separated); each costs RAM + weights.
       - TTS_HEAVY_ENGINES=\${TTS_HEAVY_ENGINES:-chatterbox,pocket-tts}
       # Idle seconds before an engine's worker is stopped and its memory
@@ -1439,6 +1445,8 @@ SITE_URL=
 # voices: give each Polish persona its own ~10s clip on the Voices page.
 # POCKET_TTS_DEFAULT_LANGUAGE=polish   # empty = english
 # POCKET_TTS_QUANTIZE=1                # int8: faster on CPU, ~half the RAM, tiny accuracy cost
+# POCKET_TTS_POLISH_MAX_TOKENS=15      # Polish chunk size; larger chunks drop words
+# POCKET_TTS_POLISH_EOS_THRESHOLD=-2   # higher keeps each Polish clause going longer
 #
 # How long an idle heavy-TTS engine stays loaded. Chatterbox is ~4GB resident
 # (weights, plus torch's CUDA context on a GPU host) and used to be held for

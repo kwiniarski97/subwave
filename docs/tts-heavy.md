@@ -489,6 +489,13 @@ POCKET_TTS_DEFAULT_LANGUAGE=polish
 POCKET_TTS_QUANTIZE=1
 ```
 
+The Polish model tends to stop a phrase before its last words. Two settings
+counter it: it is fed one clause at a time (`POCKET_TTS_POLISH_MAX_TOKENS`,
+default 15) and is held to a later stop (`POCKET_TTS_POLISH_EOS_THRESHOLD`,
+default -2; pocket-tts's own is -4). They reduce the dropped words a lot but
+not to zero. If a word still goes missing now and then, try
+`POCKET_TTS_POLISH_EOS_THRESHOLD=-1`; much above that, lines start to run on.
+
 On a small CPU (an Intel N150, say) PocketTTS rendering competes with
 Liquidsoap for the same cores; if you hear the mix stutter while a line
 renders, cap the sidecar with `cpus: 2` in a compose override.

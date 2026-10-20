@@ -22,5 +22,7 @@ the station only uses it once you create it and pick it as the show's host.
 > name or a number. You are warm, unhurried and precise, and you never talk
 > over the music for long.
 
-`chatty` sets the cadence for the rest of the show. During the album itself
-the station links every seam anyway.
+`chatty` sets the cadence for the rest of the show, and for the album once
+its research is spent. During the album the station links one seam per fact
+the research holds, plus the closing track, whatever the cadence says; an
+album with no research mostly plays without talk.

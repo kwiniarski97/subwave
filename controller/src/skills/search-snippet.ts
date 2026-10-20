@@ -3,7 +3,7 @@
 // Parallel MCP client) can use both without importing the dispatcher that
 // imports it.
 
-export type SearchResult = { title: string; content: string };
+export type SearchResult = { title: string; content: string; url?: string };
 export type SearchResponse = { answer: string; results: SearchResult[] };
 
 // Strips residual markup from a search snippet. Brave and Firecrawl both pass

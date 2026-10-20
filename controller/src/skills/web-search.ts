@@ -235,7 +235,8 @@ export function parseSearxngResponse(data: unknown): SearchResponse {
     const title = typeof rec.title === 'string' ? rec.title.trim() : '';
     const content = typeof rec.content === 'string' ? rec.content.trim().slice(0, 300) : '';
     if (!title || !content) continue;
-    results.push({ title, content });
+    const url = typeof rec.url === 'string' ? rec.url.trim() : '';
+    results.push(url ? { title, content, url } : { title, content });
     if (results.length >= 10) break;
   }
 

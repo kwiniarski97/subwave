@@ -1,17 +1,43 @@
-// Album of the day: whether a pick the album walk produced gets a link. The
-// show exists to talk between the songs, so every seam of the walk speaks,
-// whatever the persona's cadence counter says. That only applies where a link
-// could have aired at all (`linkEligible`: auto-link on, an autonomous seam
-// with a predecessor, not a mic-pass seam), and never past the voice switch or
-// the soft budget tier, which silence every other link too.
+// Album of the day: whether a pick the album walk produced gets a link. A
+// link is forced past the persona's cadence counter only while the episode
+// has something to say: one seam per talking point the research holds, plus
+// the closing track. Forcing every seam, as this once did, left a sixteen-track
+// album with three facts saying "this is the sixth track" thirteen times. Past
+// that, the album walk follows the ordinary cadence (`wantLink`), so an album
+// with no research mostly plays without talk.
 //
-// `wantLink` arrives already gated (runTrackEvent applies !cheap && voice), so
-// it passes straight through. The persona's tracksUntilLink counter is not
-// touched, so the ordinary cadence resumes after the album.
-export function albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed }: {
+// A forced link applies only where a link could have aired at all
+// (`linkEligible`: auto-link on, an autonomous seam with a predecessor, not a
+// mic-pass seam), and never past the voice switch or the soft budget tier,
+// which silence every other link too. `wantLink` arrives already gated
+// (runTrackEvent applies !cheap && voice), so it passes straight through. The
+// persona's tracksUntilLink counter is not touched, so the ordinary cadence
+// resumes after the album.
+export function albumLinkDue({ wantLink, linkEligible, cheap, voiceAllowed, index, total, talkingPoints }: {
   wantLink: boolean; linkEligible: boolean; cheap: boolean; voiceAllowed: boolean;
+  /** 0-based position of the track this pick queues, and the album's length. */
+  index: number; total: number;
+  talkingPoints: number;
 }): boolean {
-  return wantLink || (linkEligible && !cheap && voiceAllowed);
+  if (wantLink) return true;
+  if (!linkEligible || cheap || !voiceAllowed) return false;
+  return index < talkingPoints || index === total - 1;
+}
+
+// Roughly one fact per POINT_CHARS of research: a search snippet is one, a
+// Wikipedia lead several. A count, not a reading — the link writer still
+// decides what each fact is, and repeats are held off by its recap.
+const POINT_CHARS = 500;
+
+export function albumTalkingPoints(data: unknown): number {
+  const research = (data as { research?: unknown } | null | undefined)?.research;
+  if (!Array.isArray(research)) return 0;
+  let points = 0;
+  for (const row of research) {
+    const content = typeof row?.content === 'string' ? row.content.trim() : '';
+    if (content) points += Math.max(1, Math.round(content.length / POINT_CHARS));
+  }
+  return points;
 }
 
 // Album of the day in an empty room. The empty-room pause (llm.pauseWhenEmpty)

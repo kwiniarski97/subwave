@@ -155,6 +155,28 @@ test('a Wikipedia article that never names the artist is left out', async () => 
   }
 });
 
+test('the album fits the airing: a 60-minute takeover never gets an 85-minute record', async () => {
+  const now = Date.now();
+  const episode = { startsAt: now - 60_000, endsAt: now + 59 * 60_000 };
+  const s = services({ pages: [[album('long', { duration: 85 * 60 }), album('fits', { duration: 50 * 60 })]] });
+  const out: any = await tool.default({ ...ctx, episode }, {}, s, {}, {});
+  assert.equal(out.music.albumId, 'fits');
+});
+
+test('slotMinutes counts from the start, or from now once started; no window is null', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(tool.slotMinutes({ episode: { startsAt: now + 3_600_000, endsAt: now + 7_200_000 } }, now), 60, 'prepared ahead of the show');
+  assert.equal(tool.slotMinutes({ episode: { startsAt: now - 600_000, endsAt: now + 1_800_000 } }, now), 30, 'already on air');
+  assert.equal(tool.slotMinutes({}, now), null);
+});
+
+test('a slot too short for any album keeps the configured ceiling', async () => {
+  const now = Date.now();
+  const s = services({ pages: [[album('ok', { duration: 45 * 60 })]] });
+  const out: any = await tool.default({ ...ctx, episode: { startsAt: now, endsAt: now + 5 * 60_000 } }, {}, s, {}, {});
+  assert.equal(out.music.albumId, 'ok');
+});
+
 test('Navidrome unreachable: available false', async () => {
   const out = await run(services({ down: true }));
   assert.equal(out.available, false);

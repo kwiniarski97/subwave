@@ -40,3 +40,28 @@ test('the album brief asks for one song per link and no running times', () => {
   assert.match(grounding, /one song per link, never read out the tracklist, and never state a song's running time/);
   assert.doesNotMatch(grounding, /title, position, length/);
 });
+
+test('an album-walk link names the track\'s place on the record, and a title track as such', async () => {
+  const { albumPositionNote, linkPrompt } = await import('../src/llm/internal/prompts/scripts.js');
+  const current = { title: 'Ode to Io (Remastered)', artist: 'Lowrider' };
+  const album = 'Ode to Io (Remastered Deluxe Edition)';
+  assert.equal(albumPositionNote(current, { index: 9, total: 16, album }),
+    ' Track 10 of 16 on the album "Ode to Io (Remastered Deluxe Edition)". It is the title track: its name is the album\'s.');
+  assert.match(albumPositionNote({ title: 'David William Hughes' }, { index: 15, total: 16, album }), /Track 16 of 16.*closing track/);
+  assert.equal(albumPositionNote(current, null), '');
+  assert.equal(albumPositionNote(current, { index: 16, total: 16 }), '', 'out of range says nothing');
+  const prompt = linkPrompt({ current, context: {}, persona: { name: 'Archiwista' }, albumPosition: { index: 9, total: 16, album } });
+  assert.match(prompt, /Ode to Io \(Remastered\) by Lowrider\. Track 10 of 16/);
+  assert.doesNotMatch(linkPrompt({ current, context: {}, persona: { name: 'Archiwista' } }), /Track \d+ of/);
+});
+
+test('a sign-off keeps the episode research but is told the album may not have finished', async () => {
+  const { signoffPrompt } = await import('../src/llm/internal/prompts/scripts.js');
+  const { signoffEpisodeGrounding, SIGNOFF_EPISODE_RULE } = await import('../src/llm/internal/prompts/grounding.js');
+  const editorial = preparationGrounding({ subject: 'Ode to Io (Remastered Deluxe Edition) by Lowrider', data: { tracklist: [{ position: 16, title: 'David William Hughes' }] } } as any, 'restricted', [], 'album');
+  const prompt = signoffPrompt({ personaOut: { name: 'Archiwista' }, personaIn: { name: 'Ola' }, showOut: 'The Album', showIn: 'Długie Popołudnie', context: { episodeEditorial: editorial } });
+  assert.match(prompt, /Verified episode subject: Ode to Io/);
+  assert.ok(prompt.includes(SIGNOFF_EPISODE_RULE));
+  assert.ok(prompt.indexOf(SIGNOFF_EPISODE_RULE) > prompt.indexOf('closing track'), 'the sign-off rule comes after the link brief it narrows');
+  assert.equal(signoffEpisodeGrounding(''), '', 'no episode, no rule');
+});

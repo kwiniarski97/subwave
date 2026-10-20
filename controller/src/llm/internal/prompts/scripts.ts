@@ -6,7 +6,7 @@
 import * as settings from '../../../settings.js';
 import { djText } from '../strategy/text.js';
 import { djSystem, lengthPhrase, stationIdMaxSentences } from './system.js';
-import { onAirLocationGrounding } from './grounding.js';
+import { onAirLocationGrounding, signoffEpisodeGrounding } from './grounding.js';
 import { buildContextLines, decoratePrompt, pickTimePhrase, randomSeed } from './context.js';
 import { speakClockAllowed } from '../../../broadcast/clock-policy.js';
 import { isNamedRequester } from '../../../util/request-guard.js';
@@ -89,7 +89,13 @@ export const REQUESTER_GREETING_CLAUSE = ' When the request comes with a name, s
 
 const PERSONA_GROUNDING_RULE = 'FACTUAL GROUNDING: Treat supplied facts, including Sleeve Notes, as the factual ground truth for the current task. For factual claims about music, supplied facts are your only source of truth. Do not supplement them with your own knowledge of an artist, track, album or music history, even when you believe that knowledge is correct. You may naturally rephrase supplied facts, but do not expand, strengthen, upgrade or generalise them into unsupported claims, explanations, causes, relationships or historical context. “First station play” is not a premiere or a world premiere, and an album title does not make that album belong to the station or presenter. Do not invent or assume release dates, albums, chart history, credits, artist biography, lyrics, instrumentation, production details or other music trivia unless supplied. Sleeve Notes are optional material for natural conversation, not a checklist. Use only what helps the current on-air line. You do not need to mention them at all. You may freely express subjective, in-character reactions and musical impressions provided they are not presented as additional facts; describe the presenter’s response to the music, not an invented world around the station. Do not invent weather, season, date, clock time, programme state, people being present or events around the station. If approximate air time is supplied, you may infer the corresponding time of day but never make it more precise than supplied. Style or Tone instructions never override these factual-grounding rules. Use local colour, time, weather or other contextual texture only when the necessary information has been supplied.';
 
-function verifiedContextPacket(context: any, current: any = null, clockIsAirTime = false): string {
+// `albumPosition`: the album walk's place for this track. Without it a title
+// track ("Ode to Io" on Ode to Io) reads as the album's name, and a link
+// writer that had just said "the ninth track, Saguaro" said it again over the
+// tenth.
+type AlbumPosition = { index: number; total: number; album?: string | null } | null;
+
+function verifiedContextPacket(context: any, current: any = null, clockIsAirTime = false, albumPosition: AlbumPosition = null): string {
   const moment: string[] = [];
   const day = String(context?.date?.dayLabel || "").trim();
   if (day) moment.push("Day: " + day + ".");
@@ -124,12 +130,22 @@ function verifiedContextPacket(context: any, current: any = null, clockIsAirTime
   ];
   sections.push("Sleeve Notes:\n" + (sleeves.length ? sleeves.map((fact) => "- " + fact).join("\n") : "- None selected for this line."));
   if (current?.title || current?.artist) {
-    sections.push("Track on air:\n- " + String(current?.title || "Unknown") + " by " + String(current?.artist || "unknown") + ".");
+    sections.push("Track on air:\n- " + String(current?.title || "Unknown") + " by " + String(current?.artist || "unknown") + "." + albumPositionNote(current, albumPosition));
   }
   if (hasFollowingShow) {
     sections.push("If you mention the approaching change, describe it as the incoming presenter's show — never as your own or \"our\" show. Do not make it a required signpost, state remaining minutes, describe it as a fraction of the show, or repeat it mechanically.");
   }
   return sections.join("\n\n");
+}
+
+export function albumPositionNote(current: any, position: AlbumPosition): string {
+  if (!position || !(position.total > 0) || !(position.index >= 0) || position.index >= position.total) return '';
+  const n = position.index + 1;
+  const album = String(position.album || '').trim();
+  const base = (t: string) => t.replace(/\s*[([][^()[\]]*[)\]]\s*$/g, '').trim().toLowerCase();
+  const title = album && base(String(current?.title || '')) === base(album) ? ' It is the title track: its name is the album\'s.' : '';
+  const closing = n === position.total ? ' It is the closing track.' : '';
+  return ` Track ${n} of ${position.total} on the album${album ? ` "${album}"` : ''}.${title}${closing}`;
 }
 
 export async function generateIntro({ track, context, requestedBy = null, requestText = null, artistMiss = false, missedArtist = null, requestSubstitution = false, recap = null, recentTracks = null, recentOpeners = null, persona = null }: any) {
@@ -282,6 +298,7 @@ export function signoffPrompt({ personaOut, personaIn, showOut = null, showIn = 
   // This runs after the session has rolled, so context.activeShow belongs to
   // the incoming programme. Never feed that show line to the outgoing DJ: it
   // makes their sign-off claim they have been presenting the new show.
+  if (context?.episodeEditorial) context = { ...context, episodeEditorial: signoffEpisodeGrounding(context.episodeEditorial) };
   const ctxLines = buildContextLines(context, {
     contextFields: SCRIPT_CONTEXT_FIELDS.filter(field => field !== 'show'),
   });
@@ -376,6 +393,7 @@ export function linkPrompt({
   persona = null,
   includeIntroBudget = true,
   guestContribution = null,
+  albumPosition = null,
 }: any): string {
   const speaker = persona || settings.getEffectivePersona();
   const rules = [
@@ -401,7 +419,7 @@ export function linkPrompt({
     : '';
   if (budget) rules.push(budget);
 
-  const facts = verifiedContextPacket(context, current, clockIsAirTime);
+  const facts = verifiedContextPacket(context, current, clockIsAirTime, albumPosition);
   if (clockIsAirTime && fuzzyAirTime(context?.clock)) {
     rules.push("If you mention the time, use only the approximate phrase supplied in Current Context; do not turn it into an exact minute.");
   } else {

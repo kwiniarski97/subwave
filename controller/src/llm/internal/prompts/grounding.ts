@@ -25,3 +25,9 @@ export const SIGNOFF_EPISODE_RULE = 'The show may be ending before its music doe
 export function signoffEpisodeGrounding(editorial: unknown): string {
   return typeof editorial === 'string' && editorial.trim() ? `${editorial}\n${SIGNOFF_EPISODE_RULE}` : '';
 }
+
+// Season and time of day reach most scripts (the date and clock lines) while
+// the weather line does not (#471), and a model handed "autumn, after dark"
+// paints the view anyway: "the grey outside the window". That reads on air as
+// weather talk. Only the weather segment carries real conditions.
+export const WEATHER_GROUNDING_RULE = 'WEATHER GROUNDING: The season and the time of day are not the weather. Never describe what it is like outside (sky, light, cold, rain, wind, "outside the window") unless a "Weather in" line is in your context.';

@@ -11,6 +11,7 @@ import {
   startProbeLoop,
 } from './ttsHeavyClient.js';
 import { resolveTtsOutPath } from './tts-out.js';
+import { pocketTtsLanguage } from '../schemas/pocket-tts.js';
 
 // The first call still imports torch and warms the Hugging Face cache.
 const READY_TIMEOUT_MS = 60_000;
@@ -208,13 +209,16 @@ function resolveVoice(value?: string): { voice: string; referenceWav: string } {
   return { voice: v, referenceWav: '' };
 }
 
+// `language` is the persona's free-text on-air language; it picks the model
+// (schemas/pocket-tts.ts), so a Polish host is voiced by the Polish model.
 export async function speak(
   text: string,
-  { outPath: customPath, voice }: { outPath?: string; voice?: string } = {},
+  { outPath: customPath, voice, language }: { outPath?: string; voice?: string; language?: string } = {},
 ): Promise<string> {
   const { id, outPath } = await resolveTtsOutPath(text, customPath);
 
   const { voice: resolvedVoice, referenceWav } = resolveVoice(voice);
+  const model = pocketTtsLanguage(language);
 
   if (isRemoteEnabled()) {
     return speakRemote({
@@ -223,6 +227,7 @@ export async function speak(
       out: outPath,
       voice: resolvedVoice,
       referenceWav,
+      language: model,
     });
   }
 
@@ -231,6 +236,7 @@ export async function speak(
     text: text.trim(),
     voice: resolvedVoice,
     reference_wav: referenceWav,
+    language: model,
     out: outPath,
   });
   // Make a silent voice substitution visible (#238), like speakRemote() does.

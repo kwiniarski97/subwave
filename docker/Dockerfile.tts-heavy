@@ -89,6 +89,11 @@ RUN python3 -m venv /opt/chatterbox/venv && \
 # Separate venv so its resolution doesn't fight chatterbox's. pocket-tts 4.0.1
 # needs torch>=2.5 / numpy>=2; torch held at the same 2.6.0 CPU wheel. Its
 # default "english" model is english_2026-10 (2.1.0's was english_2026-04).
+# 3.x+ is what loads community language fine-tunes (the Polish model's config
+# carries `default_temperature`, which 2.1.0 rejects); the worker pins English
+# to english_2026-04 so an upgrade keeps the same voice.
+# POCKET_TTS_QUANTIZE=1 uses torch's own dynamic int8 here — the faster torchao
+# backend needs torch 2.10+, so it is deliberately not installed.
 #
 # Voice cloning (#238) is a pure RUNTIME concern: the gated kyutai/pocket-tts
 # weights download lazily on first /speak once HF_TOKEN is set in the compose

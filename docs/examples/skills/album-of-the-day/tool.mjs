@@ -7,7 +7,7 @@
 // always has a record. available:false only when Navidrome itself is down.
 
 export const configFields = {
-	maxAlbumMinutes: { type: 'number', label: 'Longest album (minutes)', min: 10, max: 600, integer: true, hint: 'Keep it inside the show slot; an album that runs past the show end is cut there. Default 110.' },
+	maxAlbumMinutes: { type: 'number', label: 'Longest album (minutes)', min: 10, max: 600, integer: true, hint: 'An upper bound; the album is also kept inside the airing itself. Default 110.' },
 	minTracks: { type: 'number', label: 'Fewest tracks', min: 1, max: 100, integer: true, hint: 'Default 5.' },
 	noRepeatDays: { type: 'number', label: 'Days before an album may return', min: 0, max: 3650, integer: true, hint: '0 allows repeats. Default 90.' },
 	recentPlayHours: { type: 'number', label: 'Skip albums with a song played in the last (hours)', min: 0, max: 720, integer: true, hint: '0 turns this off. Default 24.' },
@@ -171,8 +171,24 @@ function withinBudget(work, ms, fallback) {
 	return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
+// Minutes of the airing left from when it starts (or from now, when it has
+// already started), or null when the station did not say. A takeover is often
+// shorter than any configured maximum.
+export function slotMinutes(ctx, now = Date.now()) {
+	const startsAt = Number(ctx?.episode?.startsAt);
+	const endsAt = Number(ctx?.episode?.endsAt);
+	if (!Number.isFinite(endsAt)) return null;
+	const from = Number.isFinite(startsAt) ? Math.max(startsAt, now) : now;
+	return Math.max(0, Math.floor((endsAt - from) / 60000));
+}
+
 export default async function prepareAlbumOfTheDay(ctx, state, services, config, input) {
 	const limits = Object.fromEntries(Object.keys(DEFAULTS).map(key => [key, setting(config, key)]));
+	// The album must fit the airing, not just the configured ceiling. A slot too
+	// short for any album keeps the ceiling, and the walk ends at the show's end
+	// as before.
+	const slot = slotMinutes(ctx);
+	if (slot !== null && slot >= 10) limits.maxAlbumMinutes = Math.min(limits.maxAlbumMinutes, slot);
 	let album = null;
 	try {
 		album = await filteredPick(services, limits, ctx);

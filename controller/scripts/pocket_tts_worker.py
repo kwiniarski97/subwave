@@ -103,6 +103,119 @@ def generate_options(key):
     return dict(GENERATE_OPTIONS.get(key, {}))
 
 
+# Languages the worker chunks ITSELF before pocket-tts sees the text. pocket-tts
+# splits only at punctuation, so a comma-less sentence stays one chunk however
+# far past max_tokens it runs — a 40-token chunk lost a whole clause on air.
+# These languages are cut at word boundaries into clause-sized pieces, each
+# generated alone, with an EOS floor per piece (min_frames_per_token): the model
+# may not declare a piece finished before its text has had time to be spoken.
+# Clean renders measured 2.8-4.5 frames a token, so the 2.2 floor never touches
+# a complete read; it only holds open one that stopped before its last word.
+SELF_CHUNKED = {
+    "polish": {"min_frames_per_token": _env_float("POCKET_TTS_POLISH_MIN_FRAMES_PER_TOKEN", 2.2)},
+}
+
+# Typographic marks the Polish tokenizer has no piece for; each reads as <unk>
+# and the model swallows the word around it ("Godhead’s").
+_TYPOGRAPHIC = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"',
+                               "„": '"', "«": '"', "»": '"', "…": "..."})
+
+
+def speakable_text(text, encodes):
+    """Replace characters the tokenizer cannot encode. `encodes(ch)` says
+    whether a character has a real piece. An unknown accented letter loses its
+    accent (Åkerfeldt → Akerfeldt); anything else unknown becomes a space."""
+    import unicodedata
+    out = []
+    for ch in text.translate(_TYPOGRAPHIC):
+        if ch.isspace() or encodes(ch):
+            out.append(ch)
+            continue
+        base = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+        out.append(base if base and all(encodes(c) for c in base) else " ")
+    return " ".join("".join(out).split())
+
+
+def split_words(words, count_tokens, max_tokens):
+    """Cut an over-long word list into balanced pieces of at most max_tokens.
+    Balanced, not greedy: greedy leaves a one-word tail, and the model reads a
+    very short piece badly. A single word over the limit stays whole."""
+    import math
+    total = count_tokens(" ".join(words))
+    if total <= max_tokens or len(words) < 2:
+        return [" ".join(words)]
+    target = total / math.ceil(total / max_tokens)
+    pieces, current = [], []
+    for word in words:
+        trial = current + [word]
+        if current and (count_tokens(" ".join(trial)) > max_tokens
+                        or count_tokens(" ".join(current)) >= target):
+            pieces.append(" ".join(current))
+            current = [word]
+        else:
+            current = trial
+    if current:
+        pieces.append(" ".join(current))
+    return pieces
+
+
+def clause_pieces(chunks, count_tokens, max_tokens):
+    """pocket-tts's punctuation chunks, with every one still over max_tokens
+    cut further at word boundaries."""
+    out = []
+    for chunk in chunks:
+        if count_tokens(chunk) <= max_tokens:
+            out.append(chunk)
+        else:
+            out.extend(split_words(chunk.split(), count_tokens, max_tokens))
+    return out
+
+
+def min_frames_before_eos(tokens, per_token, stock=6):
+    import math
+    return max(stock, math.ceil(tokens * per_token))
+
+
+def synthesize(model, state, text, lang):
+    """generate_audio(), except for SELF_CHUNKED languages, which are cleaned,
+    cut into clause pieces and generated one piece at a time."""
+    opts = generate_options(lang)
+    plan = SELF_CHUNKED.get(lang)
+    if plan is None:
+        return model.generate_audio(state, text, **opts)
+    import torch
+    from pocket_tts.models.text_chunking import split_into_best_sentences
+    tokenizer = model.flow_lm.conditioner.tokenizer
+    unk = tokenizer.sp.unk_id()
+
+    def count_tokens(s):
+        return len(tokenizer(s)[0].tolist())
+
+    def encodes(ch):
+        ids = tokenizer(ch)[0].tolist()
+        return bool(ids) and unk not in ids and "⁇" not in tokenizer.sp.id_to_piece(ids[-1])
+
+    max_tokens = opts.get("max_tokens", 15)
+    text = speakable_text(text, encodes)
+    chunks = split_into_best_sentences(
+        tokenizer, text, max_tokens, model.pad_with_spaces_for_short_inputs,
+        remove_semicolons=model.remove_semicolons,
+        append_terminal_punctuation=model.append_terminal_punctuation,
+        capitalize_first_letter=model.capitalize_first_letter,
+        replace_characters=model.replace_characters,
+    )
+    stock = type(model)._MIN_FRAMES_BEFORE_EOS
+    parts = []
+    try:
+        for piece in clause_pieces(chunks, count_tokens, max_tokens):
+            model._MIN_FRAMES_BEFORE_EOS = min_frames_before_eos(
+                count_tokens(piece), plan["min_frames_per_token"], stock)
+            parts.append(model.generate_audio(state, piece, **opts))
+    finally:
+        model._MIN_FRAMES_BEFORE_EOS = stock
+    return torch.cat(parts) if parts else model.generate_audio(state, text, **opts)
+
+
 _default = (os.environ.get("POCKET_TTS_DEFAULT_LANGUAGE") or "english").strip().lower()
 DEFAULT_LANGUAGE = _default if _default in LANGUAGE_MODELS else "english"
 
@@ -315,7 +428,7 @@ def main():
                     state = voice_state(lang, model, voice)
                     voice_used = voice
 
-            audio = model.generate_audio(state, text, **generate_options(lang))
+            audio = synthesize(model, state, text, lang)
             # generate_audio returns a torch tensor; coerce to a numpy float32
             # array in roughly [-1, 1].
             if hasattr(audio, "numpy"):

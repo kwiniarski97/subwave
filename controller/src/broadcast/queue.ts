@@ -127,6 +127,7 @@ import {
   playAlreadyRecorded,
   pickShowDate,
   shouldDropCrossSessionLink,
+  shouldDropHeldSegment,
   shouldDropObsoleteHostSpeech,
   shouldDropStaleLink,
   sleep,
@@ -258,6 +259,9 @@ interface PendingVoice {
   notBefore?: number | null;
   /** Present only for ordinary automatic speech owned by the active show's host. */
   hostSpeech?: HostSpeechStamp | null;
+  /** The track on air when the segment was held: the one its writer was told
+   *  would be ending at air. shouldDropHeldSegment reads it at the boundary. */
+  subject?: { id?: string | null; title?: string | null; artist?: string | null } | null;
 }
 
 // Only a show handoff needs its rendered clips to survive queue recovery: every
@@ -330,6 +334,7 @@ export {
   playAlreadyRecorded,
   shouldDropCrossSessionLink,
   shouldDropObsoleteHostSpeech,
+  shouldDropHeldSegment,
   shouldDropStaleLink,
 } from './queue/pure.js';
 export { registerSkillKinds } from './queue/kinds.js';
@@ -2835,6 +2840,9 @@ class Queue {
       onCompleted,
       notBefore,
       hostSpeech,
+      subject: this.current?.track
+        ? { id: this.current.track.id ?? null, title: this.current.track.title ?? null, artist: this.current.track.artist ?? null }
+        : null,
     };
     if (kind === 'handoff' && notBefore != null) {
       this.armHandoffBoundaryFallback(this._pendingVoice);
@@ -3070,6 +3078,14 @@ class Queue {
     const liveDaypart = getClockContext().spokenDaypart;
     if (stationIdDaypartDrifted(p.daypart, liveDaypart)) {
       this.dropPendingVoice(`daypart changed from "${p.daypart}" to "${liveDaypart}" before air`);
+      return;
+    }
+    // Held past the boundary it was written for: `this.current` is still the
+    // OUTGOING track here (onTrackStarted rolls it after this call), and a line
+    // naming its subject would now follow the wrong song. The handoff names
+    // shows, not tracks, and owns its seam outright.
+    if (p.kind !== 'handoff' && shouldDropHeldSegment(p.subject, this.current?.track, p.clips.map(c => c.text))) {
+      this.dropPendingVoice(`it names "${p.subject!.title}", which is no longer the track ending at this boundary`);
       return;
     }
     // This boundary already speaks. The track's own line is tied to THIS song

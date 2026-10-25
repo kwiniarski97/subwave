@@ -440,6 +440,23 @@ export function shouldDropStaleLink(
   return mentionsTrack(item.introScript, item.linkPrev);     // wrong predecessor — only drop if it's actually named
 }
 
+// Should airPendingVoice DROP a held segment written about another track? A
+// segment held for the next boundary is written while `subject` is on air, and
+// its writer is told that track will be the one ending when it airs. A hold
+// that outlives that boundary (a busy seam, a vocal-runway postponement) lands
+// after a different song, so a line naming the subject now reads as talk about
+// the wrong record. Same trade as shouldDropStaleLink: only a line that NAMES
+// the subject is dropped; generic talk airs whatever ended before it.
+export function shouldDropHeldSegment(
+  subject: { id?: string | null; title?: string | null; artist?: string | null } | null | undefined,
+  outgoing: { id?: string | null; title?: string | null } | null | undefined,
+  texts: (string | null | undefined)[],
+): boolean {
+  if (!subject) return false;
+  if (sameTrack(subject, outgoing ?? null)) return false;
+  return texts.some(t => mentionsTrack(t, subject));
+}
+
 // Ordinary speech explicitly owned by the live show's host becomes obsolete
 // when that host epoch changes. Legacy AI links have no revision stamp, so only
 // a known author mismatch within the same live show is safe to drop. Missing

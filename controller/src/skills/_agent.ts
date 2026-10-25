@@ -17,6 +17,7 @@ import { preparationSkillAt, prepareEpisodeContext } from '../broadcast/show-pre
 
 import { z } from 'zod';
 import { queue } from '../broadcast/queue.js';
+import { currentTalkAir } from '../broadcast/talk-air.js';
 import * as session from '../broadcast/session.js';
 import * as settings from '../settings.js';
 import { defineAgent } from '../llm/agent.js';
@@ -294,6 +295,16 @@ export function buildSituation(ctx, { forced = false, contextFields, recentCurio
   if (ctxLines.length) lines.push(...ctxLines);
   const cur = queue.current?.track;
   if (cur) lines.push(`On air now: "${cur.title}" by ${cur.artist || 'unknown'}`);
+  // Under a 'next-track' talk scope (djTalkOnlyBetweenTracks, #1485) the
+  // segment is held for the next boundary, so the track above is the one that
+  // will have just ENDED when it airs, and a different song will be starting
+  // under it. Written as if still playing, a line about this artist reads as an
+  // introduction to that next song (a deep-cut tease of Michael Jackson's
+  // catalogue aired over "Self Control"). The queue drops a held segment that
+  // names this track if it outlives that boundary (shouldDropHeldSegment).
+  if (cur && currentTalkAir() === 'next-track') {
+    lines.push(`This segment airs only after "${cur.title}" finishes: by then it will have ended and the next song will be starting underneath you. Talk about "${cur.title}" and its artist in the past tense, name the artist rather than saying "this track" or "this artist", and never word anything as an introduction to the song that follows.`);
+  }
   // Scale the recap cap with the persona's verbosity: at the default 140 chars
   // a long persona's segment is cut after its first sentence, hiding a repeated
   // topic from the anti-repeat instruction.

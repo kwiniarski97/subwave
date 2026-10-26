@@ -23,7 +23,7 @@ function answer(status: number, body: unknown, headers: Record<string, string> =
   return calls;
 }
 
-const client = createStationClient({ apiUrl: 'http://station.test/api', streams: { mp3: '/s.mp3', opus: null } });
+const client = createStationClient({ apiUrl: 'http://station.test/api', streams: { mp3: '/s.mp3', opus: null, flac: null } });
 const payload = { songId: 'a b', synced: true, offsetMs: 0, lines: [{ startMs: 1000, text: 'x' }] };
 
 test('a well-formed answer is ok, and the song id travels encoded', async () => {

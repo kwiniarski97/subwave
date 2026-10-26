@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { isIOSDevice } from '@/lib/platform';
 import { useStationOrigin } from '@/lib/stationOrigin';
+import { chooseStream, detectCodecSupport, losslessAvailable, type CodecSupport, type StreamChoiceInput } from '@/lib/streamChoice';
+import { loadLosslessPref, saveLosslessPref } from '@/lib/losslessPref';
 import { withStreamAuth } from '@/lib/stationAuth';
 import { loadVolumePref, saveVolumePref } from '@/lib/volume';
 import { createPausedMediaUrl } from '@/lib/pausedMedia';
@@ -55,6 +57,10 @@ export interface Player {
   muted: boolean;
   // True when the idle cutoff, not the listener, tore playback down. Cleared on the next tune().
   idleStopped: boolean;
+  /** The listener's Lossless switch, and whether to offer it at all. */
+  lossless: boolean;
+  losslessAvailable: boolean;
+  setLossless: (on: boolean) => void;
 }
 
 export interface UsePlayerOptions {
@@ -62,6 +68,8 @@ export interface UsePlayerOptions {
   /** Whether the station is configured to serve `/stream.opus` (the setting, not a
    *  live mount probe). null/undefined = not known yet; the upgrade waits. */
   opusEnabled?: boolean | null;
+  /** Same, for `/stream.flac`; gates the Lossless switch. */
+  flacEnabled?: boolean | null;
   /** The station's advertised stream.bufferSeconds (useStationFeed.bufferMs).
    *  0/undefined = not known yet, and nothing is skipped. */
   bufferSeconds?: number;
@@ -72,7 +80,7 @@ export interface UsePlayerOptions {
 }
 
 // Owns the <audio> element + tune-in state. The consumer renders the <audio> tag, so skins can tap it.
-export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds = 0, onLeadTrim }: UsePlayerOptions = {}): Player {
+export function usePlayer({ initialVolume = 1, opusEnabled = null, flacEnabled = null, bufferSeconds = 0, onLeadTrim }: UsePlayerOptions = {}): Player {
   const { streams } = useStationOrigin();
   const client = useStationClient();
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -134,7 +142,7 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
     audioRef.current = el;
     setAudioEl(el);
   }, [clearWatchdog, endIdleSkip, unloadAudio]);
-  // SSR + first render use the MP3 URL so markup agrees; the effect below upgrades to Opus.
+  // SSR + first render use the MP3 URL so markup agrees; the effect below picks the mount.
   const [streamUrl, setStreamUrl] = useState<string>(streams.mp3);
   const [volume, setVolume] = useState(initialVolume);
   const [idleStopped, setIdleStopped] = useState(false);
@@ -153,8 +161,14 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
   const lastActivityAt = useRef(0);
   // The idle sweep mounts once but must call the latest stop() — bridge with a ref.
   const stopRef = useRef<() => void>(() => {});
-  // Set if the optional Opus mount fails to load; pins to MP3 so the watchdog stops retrying.
-  const opusFailedRef = useRef(false);
+  // What this browser decodes, probed after mount; null keeps SSR and first paint on MP3.
+  const [support, setSupport] = useState<CodecSupport | null>(null);
+  const [lossless, setLosslessState] = useState(false);
+  // An optional mount that fails to load is pinned away from for the session, so the
+  // watchdog stops retrying it. State for the menu, a ref for the error handler.
+  const [failed, setFailed] = useState({ opus: false, flac: false });
+  const failedRef = useRef(failed);
+  const choiceRef = useRef<StreamChoiceInput>({ streams, opusEnabled, flacEnabled, lossless, support, failed });
   useEffect(() => { streamUrlRef.current = streamUrl; }, [streamUrl]);
   useEffect(() => { streamsRef.current = streams; }, [streams]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
@@ -200,24 +214,24 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
     return () => clearTimeout(id);
   }, [volume]);
 
-  // Upgrade only when Opus is enabled and canPlayType returns probably. Exclude iOS and Firefox
-  // because chained Ogg fails at crossfades (#212). The setting needs a mixer restart, so errors
-  // fall back to MP3. Apply upgrades on the next tune/reconnect, never to playing audio (#1232,
-  // #1234).
   useEffect(() => {
-    if (opusEnabled !== true) return;
-    if (!streams.opus || opusFailedRef.current) return;
-    const ua = navigator.userAgent;
-    // Desktop/Android Firefox + Gecko forks carry "Firefox" in the UA; Firefox-for-iOS
-    // reports "FxiOS" and is already caught by isIOSDevice() below.
-    const isFirefox = /firefox/i.test(ua);
-    if (isIOSDevice() || isFirefox) return;
-    const tester = document.createElement('audio');
-    const opusOk = tester.canPlayType('audio/ogg; codecs=opus');
-    if (opusOk === 'probably') {
-      setStreamUrl(streams.opus);
-    }
-  }, [streams.opus, opusEnabled]);
+    setSupport(detectCodecSupport(t => document.createElement('audio').canPlayType(t), {
+      ios: isIOSDevice(),
+      userAgent: navigator.userAgent,
+    }));
+    setLosslessState(loadLosslessPref());
+  }, []);
+
+  // Pick the mount (lib/streamChoice.ts): MP3 floor, Opus when the station serves it and the
+  // browser says probably (never iOS or Firefox, #212), FLAC only on the listener's Lossless
+  // switch. The settings need a mixer restart, so a failing mount falls back. A change lands
+  // on the next tune/reconnect, never on playing audio (#1232, #1234); only setLossless,
+  // the listener's own press, re-tunes at once.
+  useEffect(() => {
+    const input = { streams, opusEnabled, flacEnabled, lossless, support, failed };
+    choiceRef.current = input;
+    setStreamUrl(chooseStream(input));
+  }, [streams, opusEnabled, flacEnabled, lossless, support, failed]);
 
   // Drive `status` from the <audio> element's own events and reconnect when it
   // wedges. 'playing' clears the watchdog; 'waiting'/'stalled' arm a 5s timer
@@ -295,13 +309,19 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
         return;
       }
       setStatus('idle');
-      // A failing Opus mount (commonly a 404 when Opus is off server-side) falls back
-      // permanently to MP3 rather than reconnecting to the dead URL on every retry.
-      const { mp3, opus } = streamsRef.current;
-      if (opus && streamUrlRef.current === opus) {
-        opusFailedRef.current = true;
-        streamUrlRef.current = mp3;
-        setStreamUrl(mp3);
+      // A failing optional mount (commonly a 404 when it is off server-side) is pinned
+      // away from for the session rather than reconnected to on every retry: FLAC falls
+      // to Opus or MP3, Opus to MP3.
+      const { opus, flac } = streamsRef.current;
+      const dead = flac && streamUrlRef.current === flac ? 'flac'
+        : opus && streamUrlRef.current === opus ? 'opus'
+        : null;
+      if (dead) {
+        failedRef.current = { ...failedRef.current, [dead]: true };
+        const next = chooseStream({ ...choiceRef.current, failed: failedRef.current });
+        streamUrlRef.current = next;
+        setFailed(failedRef.current);
+        setStreamUrl(next);
       }
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** retryCount.current, RECONNECT_MAX_MS);
       retryCount.current += 1;
@@ -411,7 +431,7 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
       // AbortError just means a later stop() interrupted this play — benign.
       const name = err && typeof err === 'object' && 'name' in err ? (err as { name?: string }).name : undefined;
       if (gen.current === myGen && name !== 'AbortError') {
-        // Decoder/network errors belong to onError's retry/Opus fallback path.
+        // Decoder/network errors belong to onError's retry/mount fallback path.
         // A gesture refusal cannot recover unattended, so release the stream.
         if (name === 'NotAllowedError') stop();
         console.error('Play failed:', err);
@@ -435,5 +455,26 @@ export function usePlayer({ initialVolume = 1, opusEnabled = null, bufferSeconds
     }
   };
 
-  return { audioRef, attachAudio, tunedIn, playbackState, status, volume, setVolume, tune, play, pause, stop, toggleMute, muted: volume === 0, idleStopped };
+  // The listener's own press, so unlike the automatic Opus pick it re-tunes a playing stream
+  // at once: a switch that waited for the next tune-in would read as broken. The URL is
+  // chosen here rather than by the effect so the re-tune already uses it.
+  const setLossless = (on: boolean) => {
+    saveLosslessPref(on);
+    setLosslessState(on);
+    const next = chooseStream({ ...choiceRef.current, lossless: on, failed: failedRef.current });
+    choiceRef.current = { ...choiceRef.current, lossless: on };
+    if (next === streamUrlRef.current) return;
+    streamUrlRef.current = next;
+    setStreamUrl(next);
+    if (tunedInRef.current) {
+      pause();
+      play();
+    }
+  };
+
+  return {
+    audioRef, attachAudio, tunedIn, playbackState, status, volume, setVolume, tune, play, pause, stop, toggleMute,
+    muted: volume === 0, idleStopped,
+    lossless, losslessAvailable: losslessAvailable({ streams, opusEnabled, flacEnabled, lossless, support, failed }), setLossless,
+  };
 }

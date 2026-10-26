@@ -36,6 +36,8 @@ export interface StationFeed {
    *  first poll. The SETTING, not a live mount probe: it needs a mixer restart,
    *  so it can read true while the mount still 404s (issue #1300). */
   opusEnabled: boolean | null;
+  /** Same as opusEnabled, for `/stream.flac` and the player's Lossless switch. */
+  flacEnabled: boolean | null;
   /** Station IANA timezone, or null before the first poll. Render on-air
    *  timestamps in this zone so they match what the DJ speaks (issue #418). */
   timezone: string | null;
@@ -95,6 +97,7 @@ export function useStationFeed({ leadTrimMs = 0 }: StationFeedOptions = {}): Sta
   const [session, setSession] = useState<SessionPayload>(EMPTY_SESSION);
   const [trackStartedAt, setTrackStartedAt] = useState<number | null>(null);
   const [opusEnabled, setOpusEnabled] = useState<boolean | null>(null);
+  const [flacEnabled, setFlacEnabled] = useState<boolean | null>(null);
   const [timezone, setTimezone] = useState<string | null>(null);
   const [locale, setLocale] = useState<StationLocale>('en-GB');
   const lastTrackKeyRef = useRef<string | null>(null);
@@ -228,6 +231,9 @@ export function useStationFeed({ leadTrimMs = 0 }: StationFeedOptions = {}): Sta
         if (typeof npRes.stream?.opusEnabled === 'boolean') {
           setIfChanged<boolean | null>(setOpusEnabled, npRes.stream.opusEnabled);
         }
+        if (typeof npRes.stream?.flacEnabled === 'boolean') {
+          setIfChanged<boolean | null>(setFlacEnabled, npRes.stream.flacEnabled);
+        }
         if (typeof npRes.llmTokens === 'number') setIfChanged<number | null>(setLlmTokens, npRes.llmTokens);
         if (typeof npRes.timezone === 'string' && npRes.timezone) setTimezone(npRes.timezone);
         if (npRes.locale === 'en-US' || npRes.locale === 'en-GB') setLocale(npRes.locale);
@@ -253,5 +259,5 @@ export function useStationFeed({ leadTrimMs = 0 }: StationFeedOptions = {}): Sta
     };
   }, [client, leadTrimMs]);
 
-  return { nowPlaying, context, dj, activeShow, listeners, streamOnline, llmTokens, state, session, trackStartedAt, opusEnabled, timezone, locale, leadMs, bufferMs };
+  return { nowPlaying, context, dj, activeShow, listeners, streamOnline, llmTokens, state, session, trackStartedAt, opusEnabled, flacEnabled, timezone, locale, leadMs, bufferMs };
 }

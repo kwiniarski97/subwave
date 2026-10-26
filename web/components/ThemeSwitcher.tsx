@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Palette, Zap } from 'lucide-react';
+import { AudioLines, Palette, Zap } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { resolveFont, type Theme } from '@/lib/theme';
 import { useDynamicStyle } from '../hooks/useDynamicStyle';
 import { useLiteMode } from '../hooks/useLiteMode';
 import { useThemeSwitcher } from './ThemeProvider';
 import { useSkinSelection } from './skins/SkinContext';
+import { useLosslessOption } from './player/LosslessContext';
 
 // The skin miniatures only matter once the menu is open, so they load with it
 // rather than riding every skin's first paint; hovering or focusing the trigger
@@ -119,6 +120,46 @@ function SectionHead({ label, overridden, stationName, resetLabel, followingLabe
   );
 }
 
+interface ToggleRowProps {
+  icon: typeof Zap;
+  label: string;
+  hint: string;
+  on: boolean;
+  onToggle: () => void;
+}
+
+// One of this browser's on/off preferences: a full-width pressable row.
+function ToggleRow({ icon: Icon, label, hint, on, onToggle }: ToggleRowProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onToggle}
+      className={cn(
+        'v3-focus mx-1 mt-1.5 flex cursor-pointer items-center gap-2.5 border px-3 py-2 text-left transition-colors duration-150',
+        on
+          ? 'border-vermilion bg-[var(--accent-soft)]'
+          : 'border-ink bg-bg hover:bg-[var(--overlay)]',
+      )}
+    >
+      <Icon className={cn('h-4 w-4 shrink-0', on ? 'text-vermilion' : 'text-muted')} aria-hidden="true" />
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="truncate text-[10px] font-bold tracking-[0.14em] uppercase">{label}</span>
+        <span className="truncate text-[10px] leading-[1.3] text-muted">{hint}</span>
+      </span>
+      <span
+        className={cn(
+          'shrink-0 font-mono text-[9px] font-bold tracking-[0.2em] uppercase',
+          on ? 'text-vermilion' : 'text-muted',
+        )}
+        aria-hidden="true"
+      >
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
+}
+
 export interface ThemeSwitcherProps {
   /** Trigger button text styling, so it picks up the right cluster's font. */
   variant?: 'player' | 'admin';
@@ -142,6 +183,9 @@ export default function ThemeSwitcher({ variant = 'player', className }: ThemeSw
   const [, setPreviewLoaded] = useState(false);
   const activeChipRef = useRef<HTMLButtonElement>(null);
   const { lite, setLite } = useLiteMode();
+  // Null in the admin; offered only where the station serves FLAC and this browser plays it.
+  const losslessOpt = useLosslessOption();
+  const showLossless = losslessOpt?.available === true;
 
   // Opened before the warm-up below landed: the cards draw empty and fill in
   // when the chunk arrives, without suspending anything around them.
@@ -379,35 +423,31 @@ export default function ThemeSwitcher({ variant = 'player', className }: ThemeSw
               <div className="border-b border-soft-border px-1 pb-1">
                 <span className="v3-eyebrow text-[10px] tracking-[0.3em]">Performance</span>
               </div>
-              <button
-                type="button"
-                aria-pressed={lite}
-                onClick={() => setLite(!lite)}
-                className={cn(
-                  'v3-focus mx-1 mt-1.5 flex cursor-pointer items-center gap-2.5 border px-3 py-2 text-left transition-colors duration-150',
-                  lite
-                    ? 'border-vermilion bg-[var(--accent-soft)]'
-                    : 'border-ink bg-bg hover:bg-[var(--overlay)]',
-                )}
-              >
-                <Zap className={cn('h-4 w-4 shrink-0', lite ? 'text-vermilion' : 'text-muted')} aria-hidden="true" />
-                <span className="grid min-w-0 flex-1 gap-0.5">
-                  <span className="truncate text-[10px] font-bold tracking-[0.14em] uppercase">Lite mode</span>
-                  <span className="truncate text-[10px] leading-[1.3] text-muted">
-                    Drops blur and animation, for low-power screens
-                  </span>
-                </span>
-                <span
-                  className={cn(
-                    'shrink-0 font-mono text-[9px] font-bold tracking-[0.2em] uppercase',
-                    lite ? 'text-vermilion' : 'text-muted',
-                  )}
-                  aria-hidden="true"
-                >
-                  {lite ? 'On' : 'Off'}
-                </span>
-              </button>
+              <ToggleRow
+                icon={Zap}
+                label="Lite mode"
+                hint="Drops blur and animation, for low-power screens"
+                on={lite}
+                onToggle={() => setLite(!lite)}
+              />
             </section>
+
+            {/* Also this browser's own, so no reset. A press while tuned in
+                re-tunes straight onto the other mount, a second or two of gap. */}
+            {showLossless && losslessOpt && (
+              <section className="grid gap-1.5">
+                <div className="border-b border-soft-border px-1 pb-1">
+                  <span className="v3-eyebrow text-[10px] tracking-[0.3em]">Sound</span>
+                </div>
+                <ToggleRow
+                  icon={AudioLines}
+                  label="Lossless"
+                  hint="FLAC, straight off the mixer · heavy on data"
+                  on={losslessOpt.on}
+                  onToggle={() => losslessOpt.setOn(!losslessOpt.on)}
+                />
+              </section>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

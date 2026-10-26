@@ -23,6 +23,7 @@ import { displayTimezone } from '@/lib/clockZone';
 import { FeedContext, useOptionalPlayerFeed, type PlayerFeed } from './feedContext';
 import { useStationClient, type LikeResult, type LikeStatus } from '@/lib/stationClient';
 import { listenerRequestSchema } from '@/lib/schemas.generated';
+import { LosslessContext, type LosslessOption } from './LosslessContext';
 import type { RequestResult } from '@/lib/types';
 
 export interface PlayerAudio {
@@ -113,7 +114,10 @@ export function PlayerCoreProvider({ children }: { children: ReactNode }) {
     toggleMute,
     muted,
     idleStopped,
-  } = usePlayer({ opusEnabled: feed.opusEnabled, bufferSeconds: feed.bufferMs / 1000, onLeadTrim: setLeadTrimMs });
+    lossless,
+    losslessAvailable,
+    setLossless,
+  } = usePlayer({ opusEnabled: feed.opusEnabled, flacEnabled: feed.flacEnabled, bufferSeconds: feed.bufferMs / 1000, onLeadTrim: setLeadTrimMs });
 
   // Only an explicit false is offline — see PlayerAudio.offline.
   const offline = feed.streamOnline === false;
@@ -132,6 +136,12 @@ export function PlayerCoreProvider({ children }: { children: ReactNode }) {
   stopRef.current = stop;
   muteRef.current = toggleMute;
   const gateHoldRef = useRef(false);
+  const losslessRef = useRef(setLossless);
+  losslessRef.current = setLossless;
+  const losslessValue = useMemo<LosslessOption>(
+    () => ({ available: losslessAvailable, on: lossless, setOn: on => losslessRef.current(on) }),
+    [losslessAvailable, lossless],
+  );
 
   const actions = useMemo<PlayerActions>(
     () => ({
@@ -202,18 +212,18 @@ export function PlayerCoreProvider({ children }: { children: ReactNode }) {
   // into every feed consumer.
   const {
     nowPlaying, context, dj, activeShow, listeners, streamOnline,
-    llmTokens, state, session, trackStartedAt, opusEnabled, timezone, locale, leadMs, bufferMs,
+    llmTokens, state, session, trackStartedAt, opusEnabled, flacEnabled, timezone, locale, leadMs, bufferMs,
   } = feed;
   const { zone: clockZone } = useClockZone();
   const shownTimezone = displayTimezone(timezone, clockZone);
   const feedValue = useMemo<PlayerFeed>(
     () => ({
       nowPlaying, context, dj, activeShow, listeners, streamOnline,
-      llmTokens, state, session, trackStartedAt, opusEnabled, timezone: shownTimezone, locale, leadMs, bufferMs,
+      llmTokens, state, session, trackStartedAt, opusEnabled, flacEnabled, timezone: shownTimezone, locale, leadMs, bufferMs,
       stationTimezone: timezone, clockZone,
     }),
     [nowPlaying, context, dj, activeShow, listeners, streamOnline,
-     llmTokens, state, session, trackStartedAt, opusEnabled, shownTimezone, locale, leadMs, bufferMs,
+     llmTokens, state, session, trackStartedAt, opusEnabled, flacEnabled, shownTimezone, locale, leadMs, bufferMs,
      timezone, clockZone],
   );
 
@@ -229,7 +239,9 @@ export function PlayerCoreProvider({ children }: { children: ReactNode }) {
   return (
     <FeedContext.Provider value={feedValue}>
       <AudioContext.Provider value={audioValue}>
-        <ActionsContext.Provider value={actions}>{children}</ActionsContext.Provider>
+        <ActionsContext.Provider value={actions}>
+          <LosslessContext.Provider value={losslessValue}>{children}</LosslessContext.Provider>
+        </ActionsContext.Provider>
       </AudioContext.Provider>
     </FeedContext.Provider>
   );

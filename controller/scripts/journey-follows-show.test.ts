@@ -299,6 +299,6 @@ test('runTrackEvent resolves the pick\'s show on the brief\'s clock and hands it
   const body = source.slice(source.indexOf('export async function runTrackEvent('));
   assert.match(body, /const pickShow = settings\.resolveActiveShow\(showAt \?\? undefined\);/);
   assert.match(body, /await timePhase\('pick\.advanceRun', \(\) => advanceRun\(djMode, pickAnchor, \{ show: pickShow \}\)\)/);
-  assert.match(body, /if \(await pickInOrder\([^)]*\)\) \{\s*notePickShow\(settings\.resolveActiveShow\(showAt \?\? undefined\)\);\s*return;/,
+  assert.match(body, /const inOrder = await pickInOrder\([^)]*\);\s*if \(inOrder\.picked\) \{\s*notePickShow\(settings\.resolveActiveShow\(showAt \?\? undefined\)\);\s*return;/,
     'an in-order pick records the show it was for');
 });

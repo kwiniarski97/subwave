@@ -417,6 +417,9 @@ class Queue {
   senderBusy = false;          // drain-to-Liquidsoap mutex
   pendingForceDrain = false;   // a forced drain arrived while senderBusy — re-run on release
   pickerBusy = false;          // prevent concurrent LLM picks
+  // An unheard album step in flight (runUnheardAlbumStep). Its own flag, not
+  // pickerBusy, so a slow context build never hides the coast handover.
+  albumStepBusy = false;
   autoPick = true;             // toggle: should we ask Ollama for next track when idle
   autoLink = true;             // toggle: random DJ links between auto tracks
   tracksUntilLink = pickLinkInterval();
@@ -3883,12 +3886,15 @@ class Queue {
     if (this.upcoming.length === 0 && !this.pickerBusy) {
       const closed = this.pickGateClosed();
       if (!closed) this.runPickCycle({ isAutonomous });
-      // An album of the day still walks on in order to an empty room, with no
-      // model call, so the coast does not take over.
-      else if (closed === 'listeners' && unheardAlbumStepDue({ djCallsAllowed: false, streamIdle: isStreamIdle() })) this.runUnheardAlbumStep();
-      // Closed: the coast takes over when this track ends, so the scheduler can
-      // check the fallback is not holding what the queue just aired (#1975).
-      else this.handOverToCoast(closed);
+      else {
+        // An album of the day still walks on in order to an empty room, with
+        // no model call. Most rooms have no album, so the step queues nothing.
+        if (closed === 'listeners' && unheardAlbumStepDue({ djCallsAllowed: false, streamIdle: isStreamIdle() })) this.runUnheardAlbumStep();
+        // Closed: the coast takes over when this track ends, so the scheduler
+        // can check the fallback is not holding what the queue just aired
+        // (#1975). A track the album step queues re-arms the edge as it starts.
+        this.handOverToCoast(closed);
+      }
     }
   }
 
@@ -3924,7 +3930,8 @@ class Queue {
   // track start; the :00 cron still rolls the session. The look-ahead clock is
   // the pick cycle's, so a step near a show change asks the incoming show.
   runUnheardAlbumStep() {
-    this.pickerBusy = true;
+    if (this.albumStepBusy) return;
+    this.albumStepBusy = true;
     (async () => {
       try {
         const forecastNow = Date.now();
@@ -3934,7 +3941,7 @@ class Queue {
       } catch (err) {
         this.log('error', `Unheard album step failed: ${(err as Error).message}`);
       } finally {
-        this.pickerBusy = false;
+        this.albumStepBusy = false;
       }
     })();
   }

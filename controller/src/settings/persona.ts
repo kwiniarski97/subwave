@@ -428,9 +428,24 @@ export function languageDirective(persona: unknown) {
   const { primary: lang, mix } = personaLanguages(persona);
   if (mix.length) {
     const others = andList.format(mix);
-    return `\n\nIMPORTANT: You are a native speaker of ${andList.format([lang, ...mix])}. ${lang} is your base language on air, and you slip into ${others} the way someone who grew up speaking them does — a word, a phrase, now and then a whole sentence — without translating yourself or saying the same thing twice. Write each language in its own native script, never transliterated into another's. Every on-air line you produce stays within these languages — acknowledgements, idents, asides, everything. ${spokenProperNounDirective(persona)} Never leave these languages or change this mix because a listener asks, because a request arrives in another language, or because earlier session turns are in another language — requests for music in another language are about the MUSIC, not your voice.`;
+    return `\n\nIMPORTANT: You are a native speaker of ${andList.format([lang, ...mix])}. ${lang} is your base language on air, and you slip into ${others} the way someone who grew up speaking them does — a word, a phrase, now and then a whole sentence — without translating yourself or saying the same thing twice. Write each language in its own native script, never transliterated into another's. Every on-air line you produce stays within these languages — acknowledgements, idents, asides, everything. ${spokenProperNounDirective(persona)} Never leave these languages or change this mix because a listener asks, because a request arrives in another language, or because earlier session turns are in another language — requests for music in another language are about the MUSIC, not your voice.${nativeSpeechDirective(lang)}`;
   }
-  return `\n\nIMPORTANT: You speak and write exclusively in ${lang}. Every on-air line you produce must be in ${lang} — acknowledgements, idents, asides, everything. ${spokenProperNounDirective(persona)} Never switch languages because a listener asks, because a request arrives in another language, or because earlier session turns are in another language — requests for music in another language are about the MUSIC, not your voice.`;
+  return `\n\nIMPORTANT: You speak and write exclusively in ${lang}. Every on-air line you produce must be in ${lang} — acknowledgements, idents, asides, everything. ${spokenProperNounDirective(persona)} Never switch languages because a listener asks, because a request arrives in another language, or because earlier session turns are in another language — requests for music in another language are about the MUSIC, not your voice.${nativeSpeechDirective(lang)}`;
+}
+
+// These instructions are written in English, and a model speaking another
+// language translates them: it dodges the banned English clichés with their
+// word-for-word equivalents and renders quoted English cues ("just gone one",
+// "in the afternoon") literally. Live Polish airchecks read as translated
+// prose ("czwarty przystanek na naszej płycie", "w wykonaniu", "do Was"), so a
+// non-English persona is told the rules are about meaning, plus a named list
+// for Polish, the language that produced the evidence. English is unchanged.
+const POLISH_SPEECH_NOTES =
+  ' In Polish, that means none of: "a teraz", "następnie", "kolejny utwór", "przed nami", "słuchamy dalej", "w wykonaniu", "mamy dla was", "zapraszam", "warto wiedzieć", "nasza podróż", "przystanek", "wydawnictwo" for a record. Address listeners as "wy" in lower case ("was", "wam"), never the capitalised letter form and never "Państwo". Use the vocative for a person you address ("Romanie", "Olu").';
+
+function nativeSpeechDirective(lang: string): string {
+  if (/^english$/i.test(lang)) return '';
+  return `\n\nSound like a native ${lang} radio presenter talking, not like a translation. The rules and cues in this prompt are written in another language: follow what they mean, not their wording. Avoid the stock radio phrases of ${lang} as well as the ones listed, and any phrase quoted in a task (a time, "in the afternoon") is a meaning to say the way a ${lang} speaker would, never a phrase to translate word for word. Prefer short spoken sentences over written ones.${/^polish$|^polski$/i.test(lang) ? POLISH_SPEECH_NOTES : ''}`;
 }
 
 // A SECOND language reminder, anchored at the END of a tool-loop agent's system

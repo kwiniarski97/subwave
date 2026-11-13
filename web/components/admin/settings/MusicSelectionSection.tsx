@@ -264,7 +264,7 @@ export function MusicSelectionSection({ data, form, setForm, busy, saveSettings,
             <div className="field">
               <Label>No-repeat window (tracks)</Label>
               <Input
-                type="number" min={0} max={1000} step={10}
+                type="number" min={0} max={2500} step={10}
                 value={form.llm.noRepeatWindow}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, llm: { ...f.llm, noRepeatWindow: e.target.value } }))}
                 placeholder="250"
@@ -274,7 +274,7 @@ export function MusicSelectionSection({ data, form, setForm, busy, saveSettings,
                 The last N <strong>distinct</strong> tracks can never be re-picked: a hard guard on both
                 routes, on top of the time-based window. It scales down on a small library so it never
                 blocks everything; on a big library, raise it. <strong>0 = off</strong>. Listener requests
-                stay exempt. 0&ndash;1000.
+                stay exempt. 0&ndash;2500.
               </div>
             </div>
             <div className="field">

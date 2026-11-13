@@ -310,12 +310,12 @@ export function clampDiscoverySteps(raw: unknown, def: number): number {
   return Math.min(DISCOVERY_STEPS_MAX, Math.max(DISCOVERY_STEPS_MIN, n));
 }
 
-// Distinct-play no-repeat window, floored into [0, 1000]; 0 disables. The
+// Distinct-play no-repeat window, floored into [0, 2500]; 0 disables. The
 // ceiling must stay under config.queue.recentPlaysMax (2500) or the window is
 // silently truncated. Library-size clamping happens at use time.
 export function clampNoRepeatWindow(raw: unknown, def: number): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return def;
-  return Math.min(1000, Math.max(0, Math.floor(raw)));
+  return Math.min(2500, Math.max(0, Math.floor(raw)));
 }
 
 // A variety window in SLOTS, floored into [0, 25]: artist spacing (#1406),

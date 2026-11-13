@@ -2,6 +2,7 @@
 // shared with the Live Activity.
 
 import { useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import TrackPlayer, { Event, useTrackPlayerEvents } from 'react-native-track-player';
 import { useAppActive } from '@/hooks/useAppActive';
 import { useTalking } from '@/hooks/useTalking';
@@ -62,12 +63,28 @@ export function useNowPlayingInfo({
     const withCard = sendsCard(last, next);
     sentRef.current = next;
     const update = (includeCard: boolean) => {
-      TrackPlayer.updateNowPlayingMetadata({
-        ...(includeCard ? { title, artist, album, artwork: cardArtwork(next) } : {}),
+      const metadata = {
+        // The fork's Android setMetadata clears every field not sent, so the
+        // card rides every Android update.
+        ...(includeCard || Platform.OS === 'android' ? { title, artist, album, artwork: cardArtwork(next) } : {}),
         // Retain iOS's LIVE presentation and the absence of seek controls.
         isLiveStream: true,
         ...nowPlayingProgress({ track: { duration }, trackStartedAt, talking }),
-      }).catch(() => {
+      };
+      // On Android the pinned RNTP fork's updateNowPlayingMetadata replaces the
+      // playing item with one built from the metadata alone: no url, so the
+      // stream dies (and on an empty queue it crashes). updateMetadataForTrack
+      // edits the loaded track in place and keeps its url and headers. A fixed
+      // mediaId keeps the rebuilt item from drawing a fresh random one each time.
+      const sent =
+        Platform.OS === 'android'
+          ? TrackPlayer.getActiveTrackIndex().then((index) =>
+              index === undefined
+                ? undefined
+                : TrackPlayer.updateMetadataForTrack(index, { ...metadata, mediaId: 'subwave-live' }),
+            )
+          : TrackPlayer.updateNowPlayingMetadata(metadata);
+      sent.catch(() => {
         /* no active track yet */
       });
     };

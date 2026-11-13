@@ -42,7 +42,7 @@ const FISH_S21_TAG_HINT =
 // and language, so no other engine ever sees braces asked for; any that slip
 // through are stripped before every other engine and every reader.
 const KOKORO_POLISH_ENGLISH_HINT =
-  '\n\nYour lines are voiced by a Polish speech engine. Wrap every English name or phrase in curly braces so it is pronounced in English: song and album titles, band and artist names, English quotes. Example: "Teraz {Pink Floyd} i utwór {Wish You Were Here}." Keep Polish words and Polish names outside the braces and never nest braces. Do not add Polish case endings to an English name; phrase the sentence so the name stays in its base form ("nowy album zespołu {Radiohead}").';
+  '\n\nYour lines are voiced by a Polish speech engine. Wrap every English name or phrase in curly braces so it is pronounced in English: song and album titles, band and artist names, English quotes. Example: "Teraz {Pink Floyd} i utwór {Wish You Were Here}." Only English goes in braces: Polish words, Polish names and nicknames, Polish titles and a station name that is not English always stay outside them, so they keep their Polish sound and can take their case endings ("w Radiu Vino", "dzięki, Olu"). Never nest braces. Do not add Polish case endings to an English name, but do not solve that with the same frame every time ("z płyty {X} zespołu {Y}", "w wykonaniu {Y}"): vary the shape, for example name the band as the subject ("{Gang of Four} wtedy dopiero zaczynali"), set the name off with a comma ("{Television}, {Torn Curtain}"), or lead with the title and let the band follow.';
 
 /** True when `persona` will be voiced by Kokoro reading Polish. */
 function speaksKokoroPolish(

@@ -51,6 +51,12 @@ try {
   assert.match(dirTurkish, /Turkish/, 'an explicit language still renders its own name');
   assert.doesNotMatch(dirTurkish, /\bEnglish\b/, 'an explicit non-English language does not fall back to English');
   assert.match(dirTurkish, /Never switch languages/, 'the never-switch clause also reaches non-English personas');
+  assert.match(dirTurkish, /not like a translation/, 'a non-English persona is told not to calque the prompt');
+  assert.doesNotMatch(dirTurkish, /w wykonaniu/, 'the Polish cliché list reaches Polish only');
+  assert.doesNotMatch(dirNoLang, /not like a translation/, 'an English persona gets no anti-calque clause');
+  const dirPolish = settings.languageDirective({ ...turkishPersona, language: 'polish' });
+  assert.match(dirPolish, /"w wykonaniu"/, 'Polish names its own radio clichés, in any letter case');
+  assert.match(dirPolish, /never "Państwo"/, 'Polish addresses listeners as wy');
 
   // agentLanguageReminder: same contract, field-scoped.
   const remNoLang = settings.agentLanguageReminder(noLangPersona, 'the "say" link');

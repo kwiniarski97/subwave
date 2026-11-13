@@ -229,6 +229,11 @@ export async function generateIntro({ track, context, requestedBy = null, reques
   });
 }
 
+// One rule for every segment the Day line reaches. It began on links alone,
+// and the idents and hourly checks beside them kept opening on the day: a
+// Friday aircheck had "piątkowe" in eight of twenty-five lines.
+const DAY_OF_WEEK_RULE = 'The supplied day of week is for accuracy, not generic atmosphere. Mention it only when it adds something specific and natural; do not use it as a default opener or repeat it from link to link.';
+
 export function stationIdPrompt({ context = null, persona = null }: any = {}) {
   const speaker = persona || settings.getEffectivePersona();
   const djName = speaker?.name || 'your host';
@@ -262,7 +267,7 @@ export function stationIdPrompt({ context = null, persona = null }: any = {}) {
   const handoverNudge = nextShow
     ? ` ${String(handover.nextShow.presenter).trim()} presents the next scheduled show, "${String(handover.nextShow.name).trim()}". If natural, give it one brief nod; never describe it as your own show, make it a required signpost, or explain the schedule.`
     : '';
-  ctxLines.push(`Task: ${lengthPhrase('stationId', speaker)} for ${stationName} with ${djName}. A little understated.${clockNudge}${handoverNudge}`);
+  ctxLines.push(`Task: ${lengthPhrase('stationId', speaker)} for ${stationName} with ${djName}. A little understated.${clockNudge}${handoverNudge} ${DAY_OF_WEEK_RULE}`);
   return ctxLines.join('\n');
 }
 
@@ -413,7 +418,7 @@ export function linkPrompt({
     'Output only the words to be spoken on air.',
     'The named track is already playing. Focus on it and do not refer to the previous track.',
     'Treat supplied sleeve notes as verified facts, but do not add or infer further music-history claims.',
-    'The supplied day of week is for accuracy, not generic atmosphere. Mention it only when it adds something specific and natural; do not use it as a default opener or repeat it from link to link.',
+    DAY_OF_WEEK_RULE,
     'Music facts are limited to the exact entries in Verified facts and the supplied episode source data: do not use remembered or learned album, release, chart, reputation, influence, relationship or history information.',
     'Never strengthen an approved station-history fact: “First station play” is not a premiere or a world premiere, and an album fact never means the album belongs to the station or presenter.',
     'Do not describe instrumentation, production, lyrics or other audio properties unless they are explicitly supplied. Subjective reaction is welcome, but do not present it as observation.',
@@ -597,7 +602,7 @@ const HOURLY_NO_WEATHER_RULE = 'For this hourly time check, do not mention weath
 export async function generateHourlyTime({ recap = null, context = null, recentOpeners = null, persona = null, showWelcome = false }: any = {}) {
   const ctxLines = buildContextLines(context, { contextFields: SCRIPT_CONTEXT_FIELDS });
   const timeClause = nextHourlyTimeClause(context?.clock);
-  ctxLines.push(`Task: a brief top-of-the-hour time check, in character. ${lengthPhrase('hourly', persona || undefined)}. ${timeClause}`);
+  ctxLines.push(`Task: a brief top-of-the-hour time check, in character. ${lengthPhrase('hourly', persona || undefined)}. ${timeClause} ${DAY_OF_WEEK_RULE}`);
   if (showWelcome && context?.activeShow?.name) {
     ctxLines.push(`The schedule is now in "${context.activeShow.name}". After the required time check, you may add one short, natural welcome to it. The complete line may be two short sentences. Do not introduce yourself by name, mention an outgoing presenter, or claim the show began at a particular time.`);
   }

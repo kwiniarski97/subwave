@@ -10,6 +10,7 @@ import { DEEP_CUT_DAYS, EMPTY_AIRED_INDEX, type AiredIndex } from './airing.js';
 import { artistRootKey, setKnownActsProvider, trackKey, type CandidateLike } from './recency.js';
 import { isInstrumental } from './lyric-vocal.js';
 import { clearWalk } from './library-walk.js';
+import { appendPlayedLine } from '../observability/played-log.js';
 
 let loaded = false;
 
@@ -63,13 +64,18 @@ export function shutdown(): void {
 // Record one aired track into the play-history table. Called fire-and-forget
 // from the queue's now-playing watcher: must never throw, and must tolerate a
 // DB not open yet (a first play can beat the lazy load()).
+// Also appends the play to the human-readable played-songs log
+// (observability/played-log.ts), with the previous airing read before the insert.
 export async function recordPlay(p: db.PlayWrite): Promise<void> {
+  let previous: db.PreviousPlay | null = null;
   try {
     await load();
+    try { previous = db.previousPlay(p.trackId, p.title, p.artist); } catch { /* the log line just says first play */ }
     db.recordPlay(p);
   } catch (err) {
     console.log(`[library] recordPlay failed: ${(err as Error).message}`);
   }
+  void appendPlayedLine({ ...p, previous });
 }
 
 export function get(songId: string): any {

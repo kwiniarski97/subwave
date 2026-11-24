@@ -49,6 +49,22 @@ export function recordPlay(p: PlayWrite): void {
   );
 }
 
+// The most recent earlier airing of a track, and how many times it has aired,
+// read BEFORE the new play is inserted (the played-songs log's repeat note).
+// Matched on the id when there is one, else on the exact title + artist; both
+// halves ride the covering indexes from schema v20. Null when never aired.
+export interface PreviousPlay { playedAt: string; count: number }
+
+export function previousPlay(trackId: string | null, title: string | null, artist: string | null): PreviousPlay | null {
+  const d = requireDb();
+  const r = (trackId
+    ? d.prepare(`SELECT MAX(played_at) AS last_at, COUNT(*) AS n FROM plays WHERE track_id = ?`).get(trackId)
+    : title
+      ? d.prepare(`SELECT MAX(played_at) AS last_at, COUNT(*) AS n FROM plays WHERE title = ? AND artist IS ?`).get(title, artist)
+      : null) as { last_at: string | null; n: number } | null | undefined;
+  return r?.last_at ? { playedAt: r.last_at, count: r.n } : null;
+}
+
 // A stored drops column back to its array. A malformed value (a hand edit, a
 // truncated write) reads as no drops rather than failing the whole listing.
 function parseDrops(raw: string | null): PlayMixDrop[] | null {
